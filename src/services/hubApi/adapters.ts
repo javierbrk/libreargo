@@ -1,4 +1,8 @@
-import type { HubConfig, RelayState, SensorData } from "../../types";
+import type {
+  HubConfig,
+  RelayState,
+  SensorData,
+} from "../../types";
 import {
   HubApiInvalidResponseError,
 } from "./errors";

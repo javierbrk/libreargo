@@ -1,7 +1,3 @@
-import {
-  mockAlarms,
-  mockRecommendations,
-} from "../mocks";
 import type {
   HubConfig,
   SensorData,
@@ -10,6 +6,9 @@ import type {
   Recommendation,
 } from "../types";
 import { getHubApiClient } from "./hubApi/backend";
+import { getNotifyApiClient } from "./notifyApi/backend";
+import type { NotifyMessage } from "./notifyApi/NotifyApiClient";
+import { getRecommendationsApiClient } from "./recommendationsApi/backend";
 export {
   InvalidHubConfigError,
   validateHubConfig,
@@ -17,15 +16,14 @@ export {
 
 /**
  * Servicio de datos del hub.
- * Parte del acceso ya delega al backend seleccionado; alarms,
- * recommendations, ping y validación siguen usando el comportamiento local.
+ * Delega cada llamada a la implementación seleccionada del backend
+ * (mock | http). Las pantallas y stores no conocen el transporte.
  */
 
-const simulateDelay = (ms = 300) =>
-  new Promise<void>((resolve) => setTimeout(resolve, ms));
+const DEFAULT_RECOMMENDATIONS_LIMIT = 3;
 
-export async function getConfig(_hubIp: string): Promise<HubConfig> {
-  return getHubApiClient().getConfig(_hubIp);
+export async function getConfig(hubIp: string): Promise<HubConfig> {
+  return getHubApiClient().getConfig(hubIp);
 }
 
 export async function getActual(hubIp: string): Promise<SensorData> {
@@ -38,9 +36,8 @@ export async function getRelays(
   return getHubApiClient().getRelays(hubIp);
 }
 
-export async function getAlarms(_hubIp: string): Promise<readonly Alarm[]> {
-  await simulateDelay();
-  return mockAlarms;
+export async function getAlarms(hubIp: string): Promise<readonly Alarm[]> {
+  return getHubApiClient().getAlarms(hubIp);
 }
 
 export async function toggleRelay(
@@ -51,16 +48,33 @@ export async function toggleRelay(
   return getHubApiClient().toggleRelay(hubIp, addr, ch);
 }
 
-export async function getRecommendations(): Promise<readonly Recommendation[]> {
-  await simulateDelay();
-  return [...mockRecommendations]
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    .slice(0, 3);
+export async function getRecommendations(
+  limit: number = DEFAULT_RECOMMENDATIONS_LIMIT
+): Promise<readonly Recommendation[]> {
+  return getRecommendationsApiClient().getLatest(limit);
 }
 
-/** Ping al hub para verificar conectividad */
-export async function pingHub(_hubIp: string): Promise<boolean> {
-  await simulateDelay(200);
-  // Mock: siempre conectado para el primer hub
-  return true;
+/**
+ * Encola una query asíncrona al backend (POST /messages).
+ * La respuesta aparecerá luego en getRecommendations().
+ */
+export async function submitRecommendationQuery(text: string): Promise<void> {
+  return getRecommendationsApiClient().submitQuery(text);
+}
+
+/** Ping al hub para verificar conectividad real (GET /actual con timeout). */
+export async function pingHub(hubIp: string): Promise<boolean> {
+  return getHubApiClient().pingHub(hubIp);
+}
+
+/**
+ * Poll de notificaciones push del hub vía ntfy.sh.
+ * El `topic` se construye a partir del `incubator_name` del hub (ej. `moni-XXXXXXXX`).
+ * `since` permite paginación incremental por timestamp/id del último mensaje visto.
+ */
+export async function pollHubNotifications(
+  topic: string,
+  since?: string
+): Promise<readonly NotifyMessage[]> {
+  return getNotifyApiClient().pollMessages(topic, since);
 }

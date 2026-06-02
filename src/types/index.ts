@@ -91,13 +91,14 @@ export type AlarmStatus = "active" | "acknowledged" | "snoozed";
 
 export interface Alarm {
   readonly id: string;
-  readonly timestamp: string; // ISO 8601
+  readonly timestamp: string; // ISO 8601 si el hub lo provee; si no, timestamp opaco del hub
   readonly dataType: AlarmDataType;
   readonly alertValue: number;
   readonly currentValue: number;
   readonly zones: readonly string[];
   readonly status: AlarmStatus;
-  readonly snoozedUntil?: string; // ISO 8601
+  readonly snoozedUntil?: string; // ISO 8601 — set localmente por la app
+  readonly message?: string; // Texto crudo emitido por el hub en /actual.errors
 }
 
 // --- Cultivo ---

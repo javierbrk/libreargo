@@ -1,8 +1,10 @@
-import { mockActual } from "../../mocks/actual";
+import { mockActual, mockActualWithErrors } from "../../mocks/actual";
+import { mockAlarms } from "../../mocks/alarms";
 import { mockConfig } from "../../mocks/config";
 import { mockRelays } from "../../mocks/relays";
-import type { HubConfig, RelayState, SensorData } from "../../types";
+import type { Alarm, HubConfig, RelayState, SensorData } from "../../types";
 import type { HubApiClient } from "./HubApiClient";
+import { parseAlarmsFromSensorData } from "./alarmsParser";
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -55,6 +57,24 @@ export function createMockHubApiClient(): HubApiClient {
     async toggleRelay() {
       await delay(80);
       return "OK";
+    },
+    async getAlarms(): Promise<readonly Alarm[]> {
+      await delay(120);
+      // El contrato real: las alarmas se derivan de /actual.errors.
+      // Usamos el mock con errores para reflejar ese flujo end-to-end.
+      const parsed = parseAlarmsFromSensorData(mockActualWithErrors);
+      if (parsed.length > 0) {
+        return parsed;
+      }
+      // Fallback a alarmas seed para demos cuando no hay errores en actual.
+      return mockAlarms.map((alarm) => ({
+        ...alarm,
+        zones: [...alarm.zones],
+      }));
+    },
+    async pingHub(): Promise<boolean> {
+      await delay(80);
+      return true;
     },
   };
 }

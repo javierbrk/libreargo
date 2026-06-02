@@ -1,3 +1,4 @@
+import type { Alarm } from "../../types";
 import type { HubApiClient } from "./HubApiClient";
 import {
   mapConfigurationResponse,
@@ -5,6 +6,7 @@ import {
   mapSensorDataResponse,
   mapToggleRelayResponse,
 } from "./adapters";
+import { parseAlarmsFromSensorData } from "./alarmsParser";
 import {
   HubApiInvalidResponseError,
   HubApiNetworkError,
@@ -20,6 +22,8 @@ type HubResponse = {
   json(): Promise<unknown>;
   text(): Promise<string>;
 };
+
+const PING_TIMEOUT_MS = 3000;
 
 export function createHttpHubApiClient(): HubApiClient {
   return {
@@ -48,18 +52,55 @@ export function createHttpHubApiClient(): HubApiClient {
 
       return mapToggleRelayResponse(await readBody(response));
     },
+    async getAlarms(hubIp: string): Promise<readonly Alarm[]> {
+      // Contrato confirmado por firmware (V2): las alarmas se derivan
+      // del campo `errors` de /actual. Cada entrada llega como
+      // "<texto>,<timestamp>" y se parsea localmente.
+      // La suscripción push a `notify/<Hub_ID>` queda fuera de MVP.
+      const response = await request(hubIp, "/actual", { method: "GET" });
+      const sensorData = mapSensorDataResponse(await readBody(response));
+      return parseAlarmsFromSensorData(sensorData);
+    },
+    async pingHub(hubIp: string): Promise<boolean> {
+      try {
+        const response = await request(
+          hubIp,
+          "/actual",
+          { method: "GET" },
+          PING_TIMEOUT_MS
+        );
+        return response.ok;
+      } catch {
+        return false;
+      }
+    },
   };
 }
 
 async function request(
   hubIp: string,
   path: string,
-  init?: RequestInit
+  init?: RequestInit,
+  timeoutMs?: number
 ): Promise<HubResponse> {
+  const controller =
+    typeof timeoutMs === "number" && typeof AbortController !== "undefined"
+      ? new AbortController()
+      : undefined;
+  const timer =
+    controller && typeof timeoutMs === "number"
+      ? setTimeout(() => controller.abort(), timeoutMs)
+      : undefined;
+
   try {
-    const response = (await fetch(`http://${hubIp}${path}`, init)) as HubResponse;
+    const response = (await fetch(`http://${hubIp}${path}`, {
+      ...init,
+      signal: controller?.signal,
+    })) as HubResponse;
     if (!response.ok && !isTogglePath(path)) {
-      throw new HubApiNetworkError(`Hub request failed with status ${response.status}`);
+      throw new HubApiNetworkError(
+        `Hub request failed with status ${response.status}`
+      );
     }
     return response;
   } catch (error) {
@@ -67,6 +108,10 @@ async function request(
       throw error;
     }
     throw new HubApiNetworkError();
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
   }
 }
 
