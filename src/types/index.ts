@@ -87,7 +87,7 @@ export interface HubConfig {
 
 // --- Alarma ---
 export type AlarmDataType = "temperature" | "humidity" | "co2" | "pressure";
-export type AlarmStatus = "active" | "acknowledged" | "snoozed";
+export type AlarmStatus = "active" | "acknowledged";
 
 export interface Alarm {
   readonly id: string;
@@ -97,7 +97,6 @@ export interface Alarm {
   readonly currentValue: number;
   readonly zones: readonly string[];
   readonly status: AlarmStatus;
-  readonly snoozedUntil?: string; // ISO 8601 — set localmente por la app
   readonly message?: string; // Texto crudo emitido por el hub en /actual.errors
 }
 

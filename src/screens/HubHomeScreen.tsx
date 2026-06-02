@@ -5,7 +5,6 @@ import {
   Text,
   TouchableOpacity,
   ActivityIndicator,
-  ScrollView,
   StyleSheet,
 } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -307,12 +306,7 @@ export function HubHomeScreen({ navigation, route }: Props) {
                 activeAlarmCount > 0 ? handleAlarmSummaryPress : undefined
               }
             />
-            <ScrollView
-              testID="hub-home-filters-row"
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.filtersRow}
-            >
+            <View testID="hub-home-filters-row" style={styles.filtersRow}>
               <DeviceFilter active={filter} onChange={setFilter} />
               <TouchableOpacity
                 accessibilityRole="button"
@@ -346,7 +340,7 @@ export function HubHomeScreen({ navigation, route }: Props) {
                   {zonesButtonLabel}
                 </Text>
               </TouchableOpacity>
-            </ScrollView>
+            </View>
           </View>
         }
         ListEmptyComponent={
@@ -415,8 +409,8 @@ const styles = StyleSheet.create({
   filtersRow: {
     flexDirection: "row",
     alignItems: "center",
+    flexWrap: "wrap",
     gap: 12,
-    paddingRight: 16,
   },
   zonesBtn: {
     flexDirection: "row",

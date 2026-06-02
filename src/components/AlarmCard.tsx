@@ -39,7 +39,6 @@ interface AlarmCardProps {
   readonly alarm: Alarm;
   readonly config: HubConfig | null;
   readonly onAcknowledge: (id: string) => void;
-  readonly onSnooze?: (id: string) => void;
 }
 
 function formatDate(iso: string): string {
@@ -58,7 +57,7 @@ function formatDate(iso: string): string {
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${time}`;
 }
 
-export function AlarmCard({ alarm, config, onAcknowledge, onSnooze }: AlarmCardProps) {
+export function AlarmCard({ alarm, config, onAcknowledge }: AlarmCardProps) {
   const unit = UNIT_MAP[alarm.dataType] ?? "";
   const typeLabel = TYPE_LABEL[alarm.dataType] ?? "";
   const Icon = ICON_MAP[alarm.dataType] ?? IcoTermometro;
@@ -141,14 +140,6 @@ export function AlarmCard({ alarm, config, onAcknowledge, onSnooze }: AlarmCardP
             onPress={() => onAcknowledge(alarm.id)}
             accessibilityLabel="Reconocer alarma"
           />
-          {onSnooze && (
-            <BigButton
-              label="Posponer 1h"
-              variant="outline"
-              onPress={() => onSnooze(alarm.id)}
-              accessibilityLabel="Posponer alarma una hora"
-            />
-          )}
         </View>
       )}
     </Card>

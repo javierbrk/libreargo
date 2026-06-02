@@ -28,7 +28,10 @@ type Props = NativeStackScreenProps<RootStackParamList, "HubHome">;
 
 function makeProps(): Props {
   return {
-    navigation: { navigate: jest.fn() } as unknown as Props["navigation"],
+    navigation: {
+      navigate: jest.fn(),
+      setOptions: jest.fn(),
+    } as unknown as Props["navigation"],
     route: {
       key: "HubHome",
       name: "HubHome",

@@ -95,7 +95,7 @@ export const useHubDataStore = create<HubDataState & HubDataActions>(
 
         set((state) => {
           const existingIds = new Set(state.alarms.map((alarm) => alarm.id));
-          // Conservamos las existentes (preserva acknowledge/snooze locales) y
+          // Conservamos las existentes (preserva acknowledge local) y
           // anteponemos solo las realmente nuevas.
           const fresh = parsed.filter((alarm) => !existingIds.has(alarm.id));
           return {
