@@ -42,3 +42,9 @@ yarn-error.*
 
 # local worktrees
 .worktrees/
+
+platinera/
+
+libreagro-resumen.pdf
+
+.idea
