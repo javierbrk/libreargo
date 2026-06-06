@@ -101,7 +101,19 @@ actualiza esta sección.
   Cuando exista: setear `http` + `EXPO_PUBLIC_RECOMMENDATIONS_BASE_URL`.
 - **Zonas desde el hub**: por ahora 100% locales.
 
-## Commits
+## Vulnerabilidades conocidas (`npm audit`)
+
+Las que reporta `npm audit` son **transitivas del toolchain de Expo SDK 54**,
+todas **build-time** (no llegan al runtime de la app):
+
+- **postcss** (XSS en stringify): resuelto con `overrides` a `^8.5.10` en
+  `package.json` (bump seguro dentro de 8.x).
+- **uuid <11.1.1** (vía `xcode` → `@expo/config-plugins`): **no se fixea**. El
+  fix exige `uuid@11`, un salto mayor que rompería `xcode` (que usa `uuid@7`).
+  Además `xcode` solo se usa en **prebuild de iOS** y este proyecto buildea
+  Android → no afecta el APK. Se resolverá cuando Expo lo bumpee en un SDK futuro.
+
+> No correr `npm audit fix --force`: instala `expo@56` (salto de SDK, breaking).
 
 Conventional Commits: `feat:`, `fix:`, `chore:`, `test:`, `docs:`, `refactor:`.
 Mensajes claros; commit en español está bien (el equipo es hispanohablante).
