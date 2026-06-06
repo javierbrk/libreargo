@@ -59,12 +59,14 @@ export const useHubDataStore = create<HubDataState & HubDataActions>(
     loadHubData: async (hubIp: string) => {
       set({ loading: true, error: null });
       try {
-        const [config, actual, relays, alarms] = await Promise.all([
-          getConfig(hubIp),
-          getActual(hubIp),
-          getRelays(hubIp),
-          getAlarms(hubIp),
-        ]);
+        // El WebServer del ESP32 (hub real) atiende UNA conexión a la vez.
+        // Pedimos en serie en vez de Promise.all para no saturarlo: con
+        // requests concurrentes algunas se caían. Es marginalmente más lento
+        // pero robusto (y en mock no cambia nada).
+        const config = await getConfig(hubIp);
+        const actual = await getActual(hubIp);
+        const relays = await getRelays(hubIp);
+        const alarms = await getAlarms(hubIp);
         const devices = buildDevices(config, relays);
         set({ config, actual, relays, alarms, devices, loading: false });
       } catch {
