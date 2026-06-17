@@ -13,6 +13,7 @@ import {
   getRecommendations,
   submitRecommendationQuery,
 } from "../services/hubDataService";
+import { useHubStore } from "../stores/hubStore";
 import { Card, IconBadge } from "../components/ui";
 import { IcoIdea, IcoReloj } from "../components/icons";
 import type { Recommendation } from "../types";
@@ -60,6 +61,7 @@ function RecommendationCard({ rec }: RecommendationCardProps) {
 }
 
 export function RecommendationsScreen() {
+  const selectedHubHash = useHubStore((s) => s.selectedHubHash);
   const [recommendations, setRecommendations] = useState<readonly Recommendation[]>(
     []
   );
@@ -68,15 +70,18 @@ export function RecommendationsScreen() {
   const [submitting, setSubmitting] = useState(false);
 
   const loadRecommendations = useCallback(async () => {
-    const data = await getRecommendations();
+    const data = await getRecommendations(undefined, selectedHubHash ?? undefined);
     setRecommendations(data);
-  }, []);
+  }, [selectedHubHash]);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
-        const data = await getRecommendations();
+        const data = await getRecommendations(
+          undefined,
+          selectedHubHash ?? undefined
+        );
         if (!cancelled) setRecommendations(data);
       } finally {
         if (!cancelled) setLoading(false);
@@ -85,7 +90,7 @@ export function RecommendationsScreen() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [selectedHubHash]);
 
   const handleSubmitQuery = useCallback(async () => {
     const text = query.trim();

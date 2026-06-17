@@ -7,8 +7,8 @@ import type { Recommendation } from "../../types";
  *                              aparece más tarde en el GET.
  */
 export interface RecommendationsApiClient {
-  getLatest(limit: number): Promise<readonly Recommendation[]>;
+  getLatest(limit: number, hubHash?: string): Promise<readonly Recommendation[]>;
   submitQuery(text: string): Promise<void>;
 }
 
-export type RecommendationsBackend = "mock" | "http";
+export type RecommendationsBackend = "mock" | "http" | "influx";

@@ -87,10 +87,14 @@ export function HubHomeScreen({ navigation, route }: Props) {
     let cancelled = false;
 
     void (async () => {
-      await loadHubData(resolveHubTarget(connectionMode, hub));
+      await loadHubData(resolveHubTarget(connectionMode, hub), connectionMode);
       // El push por ntfy solo se consulta cuando el backend está activo (http).
       // En modo mock (default) la app funciona con las alarmas de /actual.
-      if (!cancelled && getNotifyBackend() === "http") {
+      if (
+        !cancelled &&
+        connectionMode === "directo" &&
+        getNotifyBackend() === "http"
+      ) {
         await pollNotifications(hub.name);
       }
     })();

@@ -54,7 +54,9 @@ jobs:
       EXPO_PUBLIC_HUB_DATA_BACKEND: http
       EXPO_PUBLIC_NOTIFY_BACKEND: http
       EXPO_PUBLIC_NOTIFY_BASE_URL: https://ntfy.sh
-      EXPO_PUBLIC_RECOMMENDATIONS_BACKEND: mock
+      EXPO_PUBLIC_INFLUX_BASE_URL: http://grafana.altermundi.net:8086
+      EXPO_PUBLIC_INFLUX_DB: cto
+      EXPO_PUBLIC_RECOMMENDATIONS_BACKEND: influx
     steps:
       - uses: actions/checkout@v4
 
