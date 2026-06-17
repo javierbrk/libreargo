@@ -15,6 +15,7 @@ import {
   validateHubConfig,
   InvalidHubConfigError,
 } from "../services/hubDataService";
+import { useHubConfigStore } from "../stores/hubConfigStore";
 import { BigButton, IconBadge } from "./ui";
 import { IcoAlerta, IcoCheck, IcoWifi, IcoX } from "./icons";
 
@@ -74,6 +75,7 @@ export function AddHubModal({
           addedAt: new Date().toISOString(),
         };
 
+        useHubConfigStore.getState().setConfig(config.hash, config);
         onAdded(hub);
       } catch (error: unknown) {
         if (cancelled) {

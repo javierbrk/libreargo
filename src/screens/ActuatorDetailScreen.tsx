@@ -159,7 +159,7 @@ export function ActuatorDetailScreen({ route, navigation }: Props) {
 
       try {
         const target = resolveHubTarget(connectionMode, hub);
-        const result = await toggleRelay(target, relayAddress, ch);
+        const result = await toggleRelay(target, relayAddress, ch, connectionMode);
         if (result !== "OK") {
           throw new Error("Hub rechazó el comando");
         }

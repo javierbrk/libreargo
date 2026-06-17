@@ -1,5 +1,6 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   View,
   Text,
   FlatList,
@@ -16,6 +17,8 @@ import {
 } from "../features/sensors/sensorMeasurementCatalog";
 import { getMeasurementRange } from "../features/sensors/getMeasurementRange";
 import { useHubDataStore } from "../stores/hubDataStore";
+import { useHubStore } from "../stores/hubStore";
+import { getSensorHistory } from "../services/hubDataService";
 import {
   useZoneStore,
   zoneAssignmentKey,
@@ -25,9 +28,11 @@ import { mockReadings } from "../mocks";
 import type { RootStackParamList } from "../navigation/types";
 import { Card, IconBadge, ZonaPill } from "../components/ui";
 import { ZoneAssignSheet } from "../components/ZoneAssignSheet";
+import { TimeSeriesChart, type TimeSeriesPoint } from "../components/TimeSeriesChart";
 import { IcoZona } from "../components/icons";
 import { getDeviceIcon } from "../components/icons/getDeviceIcon";
 import { semaforo, type SemaforoState } from "../utils/semaforo";
+import type { MeasurementKey } from "../features/sensors/sensorMeasurementCatalog";
 
 type Props = NativeStackScreenProps<RootStackParamList, "SensorDetail">;
 
@@ -36,6 +41,19 @@ const STATE_HEADLINE: Record<SemaforoState, string> = {
   warn: "Atención",
   bad: "Fuera de rango",
 };
+
+const HISTORY_RANGES = [
+  { label: "1h", range: "1h", bucket: "1m" },
+  { label: "24h", range: "24h", bucket: "5m" },
+  { label: "7d", range: "7d", bucket: "1h" },
+] as const;
+
+type HistoryRange = (typeof HISTORY_RANGES)[number];
+
+interface HistoryRow {
+  readonly timestamp: string;
+  readonly value: number | null;
+}
 
 function formatTime(iso: string): string {
   const d = new Date(iso);
@@ -56,8 +74,20 @@ function getSensorLabelFromId(sensorId: string): string {
   return sensorId.slice("sensor-".length, lastDash).toUpperCase();
 }
 
+function getInfluxField(
+  measurementKey: MeasurementKey,
+  subtype: string
+): string {
+  if (measurementKey === "temperature") return "temp";
+  if (measurementKey === "co2") return "co2";
+  if (measurementKey === "pressure") return "press";
+  if (subtype === "capacitive" || subtype === "hd38") return "moisture";
+  return "hum";
+}
+
 export function SensorDetailScreen({ route, navigation }: Props) {
   const { sensorId, hubHash } = route.params;
+  const connectionMode = useHubStore((s) => s.connectionMode);
   const actual = useHubDataStore((s) => s.actual);
   const config = useHubDataStore((s) => s.config);
   const sensorDevice = useHubDataStore((s) =>
@@ -68,6 +98,14 @@ export function SensorDetailScreen({ route, navigation }: Props) {
   const knownZones = useZoneStore((s) => s.knownZones);
   const setDeviceZones = useZoneStore((s) => s.setDeviceZones);
   const [zoneSheetVisible, setZoneSheetVisible] = useState(false);
+  const [selectedRange, setSelectedRange] = useState<HistoryRange>(
+    HISTORY_RANGES[1]
+  );
+  const [historyPoints, setHistoryPoints] = useState<readonly TimeSeriesPoint[]>(
+    []
+  );
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   const measurementKey = sensorDevice?.sensorType ?? null;
   const measurementLabel = measurementKey ? LABEL_MAP[measurementKey] : null;
@@ -101,6 +139,70 @@ export function SensorDetailScreen({ route, navigation }: Props) {
     }
     return allErrors;
   }, [actual]);
+
+  useEffect(() => {
+    if (connectionMode !== "online" || !measurementKey || !sensorDevice) {
+      setHistoryPoints([]);
+      setHistoryLoading(false);
+      setHistoryError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setHistoryLoading(true);
+    setHistoryError(null);
+
+    void (async () => {
+      try {
+        const field = getInfluxField(measurementKey, sensorDevice.subtype);
+        const points = await getSensorHistory(
+          hubHash,
+          field,
+          selectedRange.range,
+          selectedRange.bucket
+        );
+        if (!cancelled) {
+          setHistoryPoints(points);
+        }
+      } catch {
+        if (!cancelled) {
+          setHistoryError("No se pudo cargar el histórico online");
+          setHistoryPoints([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setHistoryLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [connectionMode, measurementKey, sensorDevice, hubHash, selectedRange]);
+
+  const historyRows = useMemo<readonly HistoryRow[]>(() => {
+    if (connectionMode === "online") {
+      return historyPoints
+        .slice()
+        .reverse()
+        .map((point) => ({
+          timestamp: new Date(point.t * 1000).toISOString(),
+          value: point.v,
+        }));
+    }
+    if (!measurementKey) {
+      return [];
+    }
+    const readingKey = READING_KEY_MAP[measurementKey];
+    return mockReadings.slice(0, 15).map((item) => ({
+      timestamp: item.timestamp,
+      value:
+        typeof item[readingKey] === "number"
+          ? (item[readingKey] as number)
+          : null,
+    }));
+  }, [connectionMode, historyPoints, measurementKey]);
 
   if (!actual) {
     return (
@@ -153,7 +255,7 @@ export function SensorDetailScreen({ route, navigation }: Props) {
   return (
     <View style={styles.container}>
       <FlatList
-        data={mockReadings.slice(0, 15)}
+        data={historyRows}
         keyExtractor={(_, index) => String(index)}
         ListHeaderComponent={
           <View style={styles.headerWrap}>
@@ -247,12 +349,57 @@ export function SensorDetailScreen({ route, navigation }: Props) {
               </Card>
             )}
 
+            {connectionMode === "online" && (
+              <Card style={styles.chartCard}>
+                <View style={styles.chartHeader}>
+                  <Text style={styles.rangeTitle}>Histórico online</Text>
+                  <View style={styles.rangeTabs}>
+                    {HISTORY_RANGES.map((item) => {
+                      const active = item.label === selectedRange.label;
+                      return (
+                        <TouchableOpacity
+                          key={item.label}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Rango ${item.label}`}
+                          accessibilityState={{ selected: active }}
+                          style={[
+                            styles.rangeTab,
+                            active && styles.rangeTabActive,
+                          ]}
+                          onPress={() => setSelectedRange(item)}
+                          activeOpacity={0.85}
+                        >
+                          <Text
+                            style={[
+                              styles.rangeTabText,
+                              active && styles.rangeTabTextActive,
+                            ]}
+                          >
+                            {item.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+                {historyLoading ? (
+                  <View style={styles.chartLoading}>
+                    <ActivityIndicator size="small" color={COLORS.primary} />
+                  </View>
+                ) : (
+                  <TimeSeriesChart points={historyPoints} unit={unit} />
+                )}
+                {historyError && (
+                  <Text style={styles.historyError}>{historyError}</Text>
+                )}
+              </Card>
+            )}
+
             <Text style={styles.sectionTitle}>Histórico reciente</Text>
           </View>
         }
         renderItem={({ item, index }) => {
-          const readingKey = READING_KEY_MAP[measurementKey];
-          const value = item[readingKey];
+          const value = item.value;
           const itemStatus =
             measurementRange && typeof value === "number"
               ? semaforo(value, measurementRange.min, measurementRange.max)
@@ -400,6 +547,50 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
     color: COLORS.textSecondary,
+  },
+  chartCard: {
+    gap: 12,
+  },
+  chartHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  rangeTabs: {
+    flexDirection: "row",
+    backgroundColor: COLORS.surfaceAlt,
+    borderRadius: 999,
+    padding: 3,
+  },
+  rangeTab: {
+    minWidth: 46,
+    minHeight: 32,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 10,
+  },
+  rangeTabActive: {
+    backgroundColor: COLORS.primary,
+  },
+  rangeTabText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: COLORS.textSecondary,
+  },
+  rangeTabTextActive: {
+    color: "#fff",
+  },
+  chartLoading: {
+    height: 172,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  historyError: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: COLORS.error,
   },
   padCard: {
     gap: 4,

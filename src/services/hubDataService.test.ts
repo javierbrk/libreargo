@@ -19,7 +19,7 @@ describe("hubDataService", () => {
 
     await expect(getConfig("192.168.1.50")).resolves.toEqual(expectedConfig);
 
-    expect(getHubApiClient).toHaveBeenCalledTimes(1);
+    expect(getHubApiClient).toHaveBeenCalledWith("directo");
     expect(getConfigMock).toHaveBeenCalledWith("192.168.1.50");
   });
 
@@ -32,7 +32,7 @@ describe("hubDataService", () => {
 
     await expect(getActual("192.168.1.50")).resolves.toEqual(expectedActual);
 
-    expect(getHubApiClient).toHaveBeenCalledTimes(1);
+    expect(getHubApiClient).toHaveBeenCalledWith("directo");
     expect(getActualMock).toHaveBeenCalledWith("192.168.1.50");
   });
 
@@ -45,7 +45,7 @@ describe("hubDataService", () => {
 
     await expect(getRelays("192.168.1.50")).resolves.toEqual(expectedRelays);
 
-    expect(getHubApiClient).toHaveBeenCalledTimes(1);
+    expect(getHubApiClient).toHaveBeenCalledWith("directo");
     expect(getRelaysMock).toHaveBeenCalledWith("192.168.1.50");
   });
 
@@ -57,7 +57,20 @@ describe("hubDataService", () => {
 
     await expect(toggleRelay("192.168.1.50", 1, 2)).resolves.toBe("OK");
 
-    expect(getHubApiClient).toHaveBeenCalledTimes(1);
+    expect(getHubApiClient).toHaveBeenCalledWith("directo");
     expect(toggleRelayMock).toHaveBeenCalledWith("192.168.1.50", 1, 2);
+  });
+
+  it("routes calls with online mode to the online client", async () => {
+    const expectedActual = { wifi_status: "connected" };
+    const getActualMock = jest.fn().mockResolvedValue(expectedActual);
+    (getHubApiClient as jest.Mock).mockReturnValue({
+      getActual: getActualMock,
+    });
+
+    await expect(getActual("ABC123", "online")).resolves.toEqual(expectedActual);
+
+    expect(getHubApiClient).toHaveBeenCalledWith("online");
+    expect(getActualMock).toHaveBeenCalledWith("ABC123");
   });
 });

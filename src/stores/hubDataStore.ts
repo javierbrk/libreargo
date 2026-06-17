@@ -1,5 +1,12 @@
 import { create } from "zustand";
-import type { HubConfig, SensorData, RelayState, Alarm, Device } from "../types";
+import type {
+  ConnectionMode,
+  HubConfig,
+  SensorData,
+  RelayState,
+  Alarm,
+  Device,
+} from "../types";
 import {
   getConfig,
   getActual,
@@ -9,6 +16,7 @@ import {
 } from "../services/hubDataService";
 import { parseAlarmFromNotifyMessage } from "../services/hubApi/alarmsParser";
 import { buildHubSensorDevices } from "../features/sensors/buildHubSensorDevices";
+import { useHubConfigStore } from "./hubConfigStore";
 
 interface HubDataState {
   readonly config: HubConfig | null;
@@ -22,7 +30,7 @@ interface HubDataState {
 }
 
 interface HubDataActions {
-  readonly loadHubData: (hubIp: string) => Promise<void>;
+  readonly loadHubData: (target: string, mode?: ConnectionMode) => Promise<void>;
   readonly pollNotifications: (topic: string) => Promise<void>;
   readonly clearData: () => void;
 }
@@ -56,17 +64,30 @@ export const useHubDataStore = create<HubDataState & HubDataActions>(
     error: null,
     notifySince: null,
 
-    loadHubData: async (hubIp: string) => {
+    loadHubData: async (target: string, mode: ConnectionMode = "directo") => {
       set({ loading: true, error: null });
       try {
         // El WebServer del ESP32 (hub real) atiende UNA conexión a la vez.
         // Pedimos en serie en vez de Promise.all para no saturarlo: con
         // requests concurrentes algunas se caían. Es marginalmente más lento
         // pero robusto (y en mock no cambia nada).
-        const config = await getConfig(hubIp);
-        const actual = await getActual(hubIp);
-        const relays = await getRelays(hubIp);
-        const alarms = await getAlarms(hubIp);
+        const config =
+          mode === "online"
+            ? useHubConfigStore.getState().getConfig(target)
+            : await getConfig(target, mode);
+
+        if (!config) {
+          set({
+            error:
+              "Para usar Online, agregá este hub en modo Directo primero.",
+            loading: false,
+          });
+          return;
+        }
+
+        const actual = await getActual(target, mode);
+        const relays = await getRelays(target, mode);
+        const alarms = mode === "online" ? [] : await getAlarms(target, mode);
         const devices = buildDevices(config, relays);
         set({ config, actual, relays, alarms, devices, loading: false });
       } catch {

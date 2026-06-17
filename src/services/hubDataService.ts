@@ -1,4 +1,5 @@
 import type {
+  ConnectionMode,
   HubConfig,
   SensorData,
   RelayState,
@@ -6,6 +7,8 @@ import type {
   Recommendation,
 } from "../types";
 import { getHubApiClient } from "./hubApi/backend";
+import type { InfluxHubExtras } from "./hubApi/InfluxHubApiClient";
+import type { HistoryPoint } from "./hubApi/influxAdapters";
 import { getNotifyApiClient } from "./notifyApi/backend";
 import type { NotifyMessage } from "./notifyApi/NotifyApiClient";
 import { getRecommendationsApiClient } from "./recommendationsApi/backend";
@@ -22,36 +25,48 @@ export {
 
 const DEFAULT_RECOMMENDATIONS_LIMIT = 3;
 
-export async function getConfig(hubIp: string): Promise<HubConfig> {
-  return getHubApiClient().getConfig(hubIp);
+export async function getConfig(
+  hubIp: string,
+  mode: ConnectionMode = "directo"
+): Promise<HubConfig> {
+  return getHubApiClient(mode).getConfig(hubIp);
 }
 
-export async function getActual(hubIp: string): Promise<SensorData> {
-  return getHubApiClient().getActual(hubIp);
+export async function getActual(
+  hubIp: string,
+  mode: ConnectionMode = "directo"
+): Promise<SensorData> {
+  return getHubApiClient(mode).getActual(hubIp);
 }
 
 export async function getRelays(
-  hubIp: string
+  hubIp: string,
+  mode: ConnectionMode = "directo"
 ): Promise<readonly RelayState[]> {
-  return getHubApiClient().getRelays(hubIp);
+  return getHubApiClient(mode).getRelays(hubIp);
 }
 
-export async function getAlarms(hubIp: string): Promise<readonly Alarm[]> {
-  return getHubApiClient().getAlarms(hubIp);
+export async function getAlarms(
+  hubIp: string,
+  mode: ConnectionMode = "directo"
+): Promise<readonly Alarm[]> {
+  return getHubApiClient(mode).getAlarms(hubIp);
 }
 
 export async function toggleRelay(
   hubIp: string,
   addr: number,
-  ch: number
+  ch: number,
+  mode: ConnectionMode = "directo"
 ): Promise<string> {
-  return getHubApiClient().toggleRelay(hubIp, addr, ch);
+  return getHubApiClient(mode).toggleRelay(hubIp, addr, ch);
 }
 
 export async function getRecommendations(
-  limit: number = DEFAULT_RECOMMENDATIONS_LIMIT
+  limit: number = DEFAULT_RECOMMENDATIONS_LIMIT,
+  hubHash?: string
 ): Promise<readonly Recommendation[]> {
-  return getRecommendationsApiClient().getLatest(limit);
+  return getRecommendationsApiClient().getLatest(limit, hubHash);
 }
 
 /**
@@ -63,8 +78,11 @@ export async function submitRecommendationQuery(text: string): Promise<void> {
 }
 
 /** Ping al hub para verificar conectividad real (GET /actual con timeout). */
-export async function pingHub(hubIp: string): Promise<boolean> {
-  return getHubApiClient().pingHub(hubIp);
+export async function pingHub(
+  hubIp: string,
+  mode: ConnectionMode = "directo"
+): Promise<boolean> {
+  return getHubApiClient(mode).pingHub(hubIp);
 }
 
 /**
@@ -77,4 +95,17 @@ export async function pollHubNotifications(
   since?: string
 ): Promise<readonly NotifyMessage[]> {
   return getNotifyApiClient().pollMessages(topic, since);
+}
+
+export async function getSensorHistory(
+  hubHash: string,
+  field: string,
+  range: string,
+  bucket: string
+): Promise<readonly HistoryPoint[]> {
+  const client = getHubApiClient("online") as Partial<InfluxHubExtras>;
+  if (!client.getHistory) {
+    return [];
+  }
+  return client.getHistory(hubHash, field, range, bucket);
 }

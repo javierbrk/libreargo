@@ -1,4 +1,5 @@
 import { useHubDataStore } from "./hubDataStore";
+import { useHubConfigStore } from "./hubConfigStore";
 import { buildHubSensorDevices } from "../features/sensors/buildHubSensorDevices";
 import {
   getActual,
@@ -22,9 +23,18 @@ jest.mock("../features/sensors/buildHubSensorDevices", () => ({
   buildHubSensorDevices: jest.fn(),
 }));
 
+jest.mock("./hubConfigStore", () => ({
+  useHubConfigStore: {
+    getState: jest.fn(),
+  },
+}));
+
 describe("hubDataStore", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (useHubConfigStore.getState as jest.Mock).mockReturnValue({
+      getConfig: jest.fn(),
+    });
     useHubDataStore.setState(useHubDataStore.getInitialState(), true);
   });
 
@@ -109,10 +119,10 @@ describe("hubDataStore", () => {
 
     await useHubDataStore.getState().loadHubData("192.168.1.50");
 
-    expect(getConfig).toHaveBeenCalledWith("192.168.1.50");
-    expect(getActual).toHaveBeenCalledWith("192.168.1.50");
-    expect(getRelays).toHaveBeenCalledWith("192.168.1.50");
-    expect(getAlarms).toHaveBeenCalledWith("192.168.1.50");
+    expect(getConfig).toHaveBeenCalledWith("192.168.1.50", "directo");
+    expect(getActual).toHaveBeenCalledWith("192.168.1.50", "directo");
+    expect(getRelays).toHaveBeenCalledWith("192.168.1.50", "directo");
+    expect(getAlarms).toHaveBeenCalledWith("192.168.1.50", "directo");
     expect(buildHubSensorDevices).toHaveBeenCalledWith(config);
 
     expect(useHubDataStore.getState()).toMatchObject({
@@ -164,6 +174,55 @@ describe("hubDataStore", () => {
     expect(useHubDataStore.getState()).toMatchObject({
       loading: false,
       error: "No se pudieron cargar los datos del hub",
+    });
+  });
+
+  it("loads online data with persisted config instead of calling /config", async () => {
+    const config = {
+      hash: "abc12345",
+      incubator_name: "Incubadora Norte",
+      min_temperature: 18,
+      max_temperature: 38,
+      min_hum: 45,
+      max_hum: 70,
+      sensors: [],
+      relays: [],
+    };
+    const actual = {
+      a_temperature: "24.1",
+      a_humidity: "55.2",
+      a_co2: "620",
+      a_pressure: "1012",
+      wifi_status: "connected",
+      errors: {
+        temperature: [],
+        humidity: [],
+        sensors: [],
+        wifi: [],
+        rotation: [],
+      },
+    };
+
+    (useHubConfigStore.getState as jest.Mock).mockReturnValue({
+      getConfig: jest.fn().mockReturnValue(config),
+    });
+    (getActual as jest.Mock).mockResolvedValue(actual);
+    (getRelays as jest.Mock).mockResolvedValue([]);
+    (buildHubSensorDevices as jest.Mock).mockReturnValue([]);
+
+    await useHubDataStore.getState().loadHubData("abc12345", "online");
+
+    expect(getConfig).not.toHaveBeenCalled();
+    expect(getActual).toHaveBeenCalledWith("abc12345", "online");
+    expect(getRelays).toHaveBeenCalledWith("abc12345", "online");
+    expect(getAlarms).not.toHaveBeenCalled();
+    expect(useHubDataStore.getState()).toMatchObject({
+      config,
+      actual,
+      relays: [],
+      alarms: [],
+      loading: false,
+      error: null,
     });
   });
 });

@@ -3,12 +3,13 @@ import type {
   RecommendationsBackend,
 } from "./RecommendationsApiClient";
 import { createHttpRecommendationsApiClient } from "./HttpRecommendationsApiClient";
+import { createInfluxRecommendationsApiClient } from "./InfluxRecommendationsApiClient";
 import { createMockRecommendationsApiClient } from "./MockRecommendationsApiClient";
 
 function isRecommendationsBackend(
   value: string | undefined
 ): value is RecommendationsBackend {
-  return value === "mock" || value === "http";
+  return value === "mock" || value === "http" || value === "influx";
 }
 
 export function getRecommendationsBackend(): RecommendationsBackend {
@@ -51,6 +52,9 @@ export function getRecommendationsApiClient(): RecommendationsApiClient {
         cachedClient = createHttpRecommendationsApiClient(baseUrl);
         break;
       }
+      case "influx":
+        cachedClient = createInfluxRecommendationsApiClient();
+        break;
       default: {
         const exhaustive: never = backend;
         throw new Error(`Unsupported recommendations backend: ${exhaustive}`);

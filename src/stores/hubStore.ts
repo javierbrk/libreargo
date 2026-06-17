@@ -1,4 +1,6 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
 import type { Hub, ConnectionMode } from "../types";
 import { mockHubs } from "../mocks";
 import { getHubDataBackend } from "../services/hubApi/backend";
@@ -17,37 +19,55 @@ interface HubActions {
   readonly updateHubStatus: (hash: string, status: Hub["status"]) => void;
 }
 
-export const useHubStore = create<HubState & HubActions>((set) => ({
-  // Hubs sembrados solo en modo mock (dev/tests). En release http la lista
-  // arranca vacía: no mostramos hubs falsos ni colisionan por hash con el alta real.
-  hubs: getHubDataBackend() === "mock" ? mockHubs : [],
-  connectionMode: "directo",
-  selectedHubHash: null,
+const initialHubs = getHubDataBackend() === "mock" ? mockHubs : [];
 
-  setConnectionMode: (mode) =>
-    set({ connectionMode: mode }),
+export const useHubStore = create<HubState & HubActions>()(
+  persist(
+    (set) => ({
+      // Hubs sembrados solo en modo mock (dev/tests). En release http la lista
+      // arranca vacía: no mostramos hubs falsos ni colisionan por hash con el alta real.
+      hubs: initialHubs,
+      connectionMode: "directo",
+      selectedHubHash: null,
 
-  selectHub: (hash) =>
-    set({ selectedHubHash: hash }),
+      setConnectionMode: (mode) =>
+        set({ connectionMode: mode }),
 
-  addHub: (hub) =>
-    set((state) => ({
-      hubs: state.hubs.some((h) => h.hash === hub.hash)
-        ? state.hubs
-        : [...state.hubs, hub],
-    })),
+      selectHub: (hash) =>
+        set({ selectedHubHash: hash }),
 
-  removeHub: (hash) =>
-    set((state) => ({
-      hubs: state.hubs.filter((h) => h.hash !== hash),
-      selectedHubHash:
-        state.selectedHubHash === hash ? null : state.selectedHubHash,
-    })),
+      addHub: (hub) =>
+        set((state) => ({
+          hubs: state.hubs.some((h) => h.hash === hub.hash)
+            ? state.hubs
+            : [...state.hubs, hub],
+        })),
 
-  updateHubStatus: (hash, status) =>
-    set((state) => ({
-      hubs: state.hubs.map((h) =>
-        h.hash === hash ? { ...h, status } : h
-      ),
-    })),
-}));
+      removeHub: (hash) =>
+        set((state) => ({
+          hubs: state.hubs.filter((h) => h.hash !== hash),
+          selectedHubHash:
+            state.selectedHubHash === hash ? null : state.selectedHubHash,
+        })),
+
+      updateHubStatus: (hash, status) =>
+        set((state) => ({
+          hubs: state.hubs.map((h) =>
+            h.hash === hash ? { ...h, status } : h
+          ),
+        })),
+    }),
+    {
+      name: "libreagro-hubs",
+      storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({ hubs: state.hubs }),
+      merge: (persisted, current) => ({
+        ...current,
+        hubs:
+          Array.isArray((persisted as Partial<HubState> | undefined)?.hubs)
+            ? (persisted as Partial<HubState>).hubs ?? current.hubs
+            : current.hubs,
+      }),
+    }
+  )
+);
