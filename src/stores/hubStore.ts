@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Hub, ConnectionMode } from "../types";
 import { mockHubs } from "../mocks";
+import { getHubDataBackend } from "../services/hubApi/backend";
 
 interface HubState {
   readonly hubs: readonly Hub[];
@@ -17,7 +18,9 @@ interface HubActions {
 }
 
 export const useHubStore = create<HubState & HubActions>((set) => ({
-  hubs: mockHubs,
+  // Hubs sembrados solo en modo mock (dev/tests). En release http la lista
+  // arranca vacía: no mostramos hubs falsos ni colisionan por hash con el alta real.
+  hubs: getHubDataBackend() === "mock" ? mockHubs : [],
   connectionMode: "directo",
   selectedHubHash: null,
 
