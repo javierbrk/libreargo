@@ -36,6 +36,32 @@ npm run android      # abre en Android
 > En desarrollo la app usa **datos mock** por defecto (no necesita un hub real).
 > Los servicios reales se activan solo en builds de release (ver más abajo).
 
+## Notificaciones ntfy en Android (MVP)
+
+Para notificaciones nativas/background, el MVP usa la app oficial de **ntfy**
+instalada en el teléfono como distribuidor. El usuario debe instalar **LibreAgro**
+y **ntfy**, y suscribir ntfy al topic del hub:
+
+```
+moni-<MAC_sin_dos_puntos>
+```
+
+Por ejemplo, para probar desde una terminal:
+
+```bash
+curl -d "[C] CO2 too high: 1200 max:900" https://ntfy.sh/moni-001122aabbcc
+```
+
+La app ntfy mantiene su conexión en background y muestra la notificación de
+Android cuando llega un POST del ESP32, curl u otro publicador. LibreAgro no
+registra por ahora un `BroadcastReceiver` nativo propio; en foreground, cuando
+la pantalla del hub está montada y el modo es **Online**, LibreAgro consulta ntfy
+periódicamente y agrega las alarmas de medición soportadas a la pantalla de
+Alarmas.
+
+En **Directo** no se consulta ntfy: el teléfono queda conectado al AP del hub y
+no tiene salida a internet.
+
 ## Tests y tipos
 
 ```bash

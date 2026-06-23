@@ -11,13 +11,14 @@ import type { NotifyMessage } from "../notifyApi/NotifyApiClient";
  *
  * El parser:
  * - separa por la última coma (texto + timestamp);
- * - asigna `dataType` según la categoría del array (temperature/humidity/...);
+ * - asigna `dataType` según la categoría del array o el texto en `sensors`;
  * - extrae `currentValue` del primer número que sigue al primer ":" del texto;
  * - extrae `alertValue` de `min:` o `max:` cuando aparece;
  * - usa el timestamp del hub como id estable (`<dataType>-<timestamp>`).
  *
- * Las categorías `wifi`, `sensors` y `rotation` no se exponen como alarmas
- * porque el modelo `AlarmDataType` cubre sólo mediciones.
+ * Las categorías `wifi` y `rotation`, junto con entradas técnicas no
+ * clasificables de `sensors`, no se exponen como alarmas porque el modelo
+ * `AlarmDataType` cubre sólo mediciones.
  */
 export function parseAlarmsFromSensorData(
   actual: SensorData
@@ -48,13 +49,32 @@ export function parseAlarmsFromSensorData(
     }
   }
 
+  for (const raw of actual.errors.sensors) {
+    if (typeof raw !== "string" || raw.trim() === "") {
+      continue;
+    }
+    const parsed = parseSensorEntry(raw);
+    if (parsed) {
+      alarms.push(parsed);
+    }
+  }
+
   // Ordenar por timestamp descendente (más recientes primero).
   return alarms.slice().sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 }
 
+function parseSensorEntry(raw: string): Alarm | undefined {
+  const message = extractMessage(raw);
+  const dataType = classifyDataType(message);
+  if (!dataType) {
+    return undefined;
+  }
+  return parseEntry(raw, dataType);
+}
+
 function parseEntry(raw: string, dataType: AlarmDataType): Alarm | undefined {
   const lastComma = raw.lastIndexOf(",");
-  const message = lastComma >= 0 ? raw.slice(0, lastComma).trim() : raw.trim();
+  const message = extractMessage(raw);
   const rawTimestamp =
     lastComma >= 0 ? raw.slice(lastComma + 1).trim() : "";
 
@@ -72,6 +92,11 @@ function parseEntry(raw: string, dataType: AlarmDataType): Alarm | undefined {
     status: "active",
     message,
   };
+}
+
+function extractMessage(raw: string): string {
+  const lastComma = raw.lastIndexOf(",");
+  return lastComma >= 0 ? raw.slice(0, lastComma).trim() : raw.trim();
 }
 
 /**
