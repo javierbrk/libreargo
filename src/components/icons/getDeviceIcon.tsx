@@ -29,8 +29,8 @@ const SENSOR_SUBTYPE_ICONS: Record<string, IconComponent> = {
   scd30: IcoCO2,
   bme280: IcoGota,
   modbus_th: IcoTermometro,
-  modbus_7in1: IcoSol,
-  hd38: IcoCO2,
+  modbus_soil_7in1: IcoSol,
+  hd38: IcoBrote, // soil moisture → sprout pictogram
 };
 
 const ACTUATOR_ALIAS_ICONS: ReadonlyArray<readonly [RegExp, IconComponent]> = [

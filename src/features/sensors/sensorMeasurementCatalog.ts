@@ -42,14 +42,14 @@ const SENSOR_SUBTYPE_CATALOG: Record<
       { key: "humidity", label: "Humedad" },
     ],
   },
-  modbus_7in1: {
+  modbus_soil_7in1: {
     measurements: [
       { key: "temperature", label: "Temperatura", isPrimaryVisual: true },
       { key: "humidity", label: "Humedad" },
     ],
   },
   hd38: {
-    measurements: [{ key: "co2", label: "CO2", isPrimaryVisual: true }],
+    measurements: [{ key: "humidity", label: "Humedad", isPrimaryVisual: true }],
   },
 };
 

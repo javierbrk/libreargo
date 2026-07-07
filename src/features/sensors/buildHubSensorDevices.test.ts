@@ -45,6 +45,49 @@ describe("buildHubSensorDevices", () => {
     ]);
   });
 
+  it("usa el nombre configurado en el sensor (config.name) en vez del label genérico", () => {
+    const namedConfig: HubConfig = {
+      ...config,
+      sensors: [
+        {
+          type: "capacitive",
+          enabled: true,
+          config: { name: "Soil5" },
+          zones: ["Zona A"],
+        },
+        {
+          type: "hd38",
+          enabled: true,
+          config: { name: "Soil6" },
+          zones: ["Zona B"],
+        },
+      ],
+    };
+
+    expect(buildHubSensorDevices(namedConfig)).toEqual([
+      expect.objectContaining({ id: "sensor-capacitive-0", name: "Soil5" }),
+      expect.objectContaining({ id: "sensor-hd38-1", name: "Soil6" }),
+    ]);
+  });
+
+  it("cae al label genérico cuando el sensor no tiene config.name", () => {
+    const unnamedConfig: HubConfig = {
+      ...config,
+      sensors: [
+        {
+          type: "capacitive",
+          enabled: true,
+          config: {},
+          zones: ["Zona A"],
+        },
+      ],
+    };
+
+    expect(buildHubSensorDevices(unnamedConfig)).toEqual([
+      expect.objectContaining({ id: "sensor-capacitive-0", name: "Humedad" }),
+    ]);
+  });
+
   it("omite sensores sin medicion visible resuelta en vez de convertirlos a temperatura", () => {
     const unsupportedConfig: HubConfig = {
       ...config,
