@@ -24,11 +24,26 @@ export interface SensorConfig {
   readonly zones?: readonly string[];
 }
 
+export interface ActualSensorReading {
+  readonly value: string;
+  readonly key_var?: number;
+}
+
+export interface ActualSensorEntry {
+  readonly id: string;
+  readonly type: string;
+  readonly readings: readonly ActualSensorReading[];
+}
+
 export interface SensorData {
   readonly a_temperature: string;
   readonly a_humidity: string;
   readonly a_co2: string;
   readonly a_pressure: string;
+  // Lecturas individuales por sensor (de /actual.sensors[]). Permite mostrar
+  // el valor real de cada sensor en vez del agregado legacy a_* (que solo
+  // trae el primero encontrado de cada tipo, compartido entre todos).
+  readonly sensors: readonly ActualSensorEntry[];
   readonly wifi_status: "connected" | "disconnected" | "unknown";
   readonly errors: Readonly<{
     temperature: readonly string[];

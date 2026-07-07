@@ -37,6 +37,9 @@ export function mapInfluxActual(series: readonly InfluxSeries[]): SensorData {
     a_humidity: fmtMeasurement(row.hum ?? row.soil_hum ?? row.moisture ?? null),
     a_co2: fmtMeasurement(row.co2 ?? null),
     a_pressure: fmtMeasurement(row.press ?? null),
+    // Online (Influx) no expone lecturas por sensor individual, solo el
+    // último agregado por hub: resolveSensorReading cae al legacy a_* acá.
+    sensors: [],
     wifi_status: hasData ? "connected" : "disconnected",
     errors: {
       temperature: [],

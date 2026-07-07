@@ -16,6 +16,7 @@ import {
   UNIT_MAP,
 } from "../features/sensors/sensorMeasurementCatalog";
 import { getMeasurementRange } from "../features/sensors/getMeasurementRange";
+import { resolveSensorReading } from "../features/sensors/resolveSensorReading";
 import { useHubDataStore } from "../stores/hubDataStore";
 import { useHubStore } from "../stores/hubStore";
 import { getSensorHistory } from "../services/hubDataService";
@@ -239,7 +240,9 @@ export function SensorDetailScreen({ route, navigation }: Props) {
   }
 
   const Icon = getDeviceIcon(sensorDevice);
-  const actualValue = Number.parseFloat(actual[ACTUAL_KEY_MAP[measurementKey]]);
+  const perSensorValue = config ? resolveSensorReading(sensorDevice, config, actual) : null;
+  const actualValue =
+    perSensorValue ?? Number.parseFloat(actual[ACTUAL_KEY_MAP[measurementKey]]);
   const hasValue = Number.isFinite(actualValue);
   const unit = UNIT_MAP[measurementKey] ?? "";
   const status = measurementRange

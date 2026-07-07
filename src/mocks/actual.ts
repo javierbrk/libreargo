@@ -5,6 +5,7 @@ export const mockActual: SensorData = {
   a_humidity: "60.00",
   a_co2: "450.00",
   a_pressure: "1013.25",
+  sensors: [],
   wifi_status: "connected",
   errors: {
     temperature: [],
@@ -22,6 +23,7 @@ export const mockActualWithErrors: SensorData = {
   a_humidity: "35.67",
   a_co2: "450.00",
   a_pressure: "965.28",
+  sensors: [],
   wifi_status: "disconnected",
   errors: {
     temperature: [

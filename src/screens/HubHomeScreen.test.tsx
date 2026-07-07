@@ -97,6 +97,7 @@ describe("HubHomeScreen", () => {
     a_humidity: "60.0",
     a_co2: "500",
     a_pressure: "1013",
+    sensors: [],
     wifi_status: "connected",
     errors: {
       temperature: [],

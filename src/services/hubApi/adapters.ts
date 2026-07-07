@@ -61,6 +61,7 @@ export function mapSensorDataResponse(payload: unknown): SensorData {
     a_humidity: data.a_humidity,
     a_co2: data.a_co2,
     a_pressure: data.a_pressure,
+    sensors: parseActualSensors(data.sensors),
     wifi_status: data.wifi_status,
     errors: {
       temperature: [...errors.temperature],
@@ -70,6 +71,40 @@ export function mapSensorDataResponse(payload: unknown): SensorData {
       rotation: [...errors.rotation],
     },
   };
+}
+
+// El array `sensors` de /actual es adicional a los campos legacy a_* (no lo
+// exige validateHubConfig ni el contrato histórico): si falta o viene mal
+// formado, degradamos a [] en vez de rechazar toda la respuesta.
+function parseActualSensors(value: unknown): SensorData["sensors"] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((entry) => {
+    if (
+      !isPlainObject(entry) ||
+      typeof entry.id !== "string" ||
+      typeof entry.type !== "string" ||
+      !Array.isArray(entry.readings)
+    ) {
+      return [];
+    }
+
+    const readings = entry.readings.flatMap((reading) => {
+      if (!isPlainObject(reading) || typeof reading.value !== "string") {
+        return [];
+      }
+      return [
+        {
+          value: reading.value,
+          key_var: typeof reading.key_var === "number" ? reading.key_var : undefined,
+        },
+      ];
+    });
+
+    return [{ id: entry.id, type: entry.type, readings }];
+  });
 }
 
 export function mapRelayListResponse(payload: unknown): readonly RelayState[] {

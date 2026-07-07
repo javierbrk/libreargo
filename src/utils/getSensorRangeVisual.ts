@@ -5,6 +5,7 @@ import {
   UNIT_MAP,
 } from "../features/sensors/sensorMeasurementCatalog";
 import { getMeasurementRange } from "../features/sensors/getMeasurementRange";
+import { resolveSensorReading } from "../features/sensors/resolveSensorReading";
 
 export function getSensorRangeVisual(
   device: Device,
@@ -21,7 +22,8 @@ export function getSensorRangeVisual(
   }
   const range = getMeasurementRange(measurementKey, config);
   const actualKey = ACTUAL_KEY_MAP[measurementKey];
-  const current = Number.parseFloat(actual[actualKey]);
+  const current =
+    resolveSensorReading(device, config, actual) ?? Number.parseFloat(actual[actualKey]);
 
   if (!range || !Number.isFinite(current) || range.min >= range.max) {
     return null;

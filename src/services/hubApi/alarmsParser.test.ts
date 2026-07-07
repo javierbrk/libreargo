@@ -6,6 +6,7 @@ const BASE_ACTUAL: SensorData = {
   a_humidity: "58",
   a_co2: "650",
   a_pressure: "1013",
+  sensors: [],
   wifi_status: "connected",
   errors: {
     temperature: [],
