@@ -76,8 +76,10 @@ export interface RelayState {
   readonly address: number;
   readonly alias: string;
   readonly active: boolean;
-  readonly state: readonly [boolean, boolean];
-  readonly input_state: readonly [boolean, boolean];
+  // Un booleano por canal. Los módulos reales tienen 1 (gpio), 2 (relay_2ch)
+  // o 4 (relay_4ch) canales.
+  readonly state: readonly boolean[];
+  readonly input_state: readonly boolean[];
   readonly zones?: readonly string[];
 }
 

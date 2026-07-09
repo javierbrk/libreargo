@@ -12,7 +12,6 @@ import { COLORS } from "../constants";
 import {
   ACTUAL_KEY_MAP,
   LABEL_MAP,
-  READING_KEY_MAP,
   UNIT_MAP,
 } from "../features/sensors/sensorMeasurementCatalog";
 import { getMeasurementRange } from "../features/sensors/getMeasurementRange";
@@ -25,7 +24,6 @@ import {
   zoneAssignmentKey,
   mergeDeviceZones,
 } from "../stores/zoneStore";
-import { mockReadings } from "../mocks";
 import type { RootStackParamList } from "../navigation/types";
 import { Card, IconBadge, ZonaPill } from "../components/ui";
 import { ZoneAssignSheet } from "../components/ZoneAssignSheet";
@@ -82,7 +80,15 @@ function getInfluxField(
   if (measurementKey === "temperature") return "temp";
   if (measurementKey === "co2") return "co2";
   if (measurementKey === "pressure") return "press";
-  if (subtype === "capacitive" || subtype === "hd38") return "moisture";
+  // Sensores de suelo escriben "moisture" en Influx, no "hum" (ver firmware:
+  // getMeasurementsString de SensorCapacitive/HD38Sensor/ModbusSoil7in1Sensor).
+  if (
+    subtype === "capacitive" ||
+    subtype === "hd38" ||
+    subtype === "modbus_soil_7in1"
+  ) {
+    return "moisture";
+  }
   return "hum";
 }
 
@@ -183,27 +189,19 @@ export function SensorDetailScreen({ route, navigation }: Props) {
   }, [connectionMode, measurementKey, sensorDevice, hubHash, selectedRange]);
 
   const historyRows = useMemo<readonly HistoryRow[]>(() => {
-    if (connectionMode === "online") {
-      return historyPoints
-        .slice()
-        .reverse()
-        .map((point) => ({
-          timestamp: new Date(point.t * 1000).toISOString(),
-          value: point.v,
-        }));
-    }
-    if (!measurementKey) {
+    // El histórico solo existe en Online (viene de InfluxDB). El hub no
+    // guarda series localmente, así que en Directo no hay nada que mostrar.
+    if (connectionMode !== "online") {
       return [];
     }
-    const readingKey = READING_KEY_MAP[measurementKey];
-    return mockReadings.slice(0, 15).map((item) => ({
-      timestamp: item.timestamp,
-      value:
-        typeof item[readingKey] === "number"
-          ? (item[readingKey] as number)
-          : null,
-    }));
-  }, [connectionMode, historyPoints, measurementKey]);
+    return historyPoints
+      .slice()
+      .reverse()
+      .map((point) => ({
+        timestamp: new Date(point.t * 1000).toISOString(),
+        value: point.v,
+      }));
+  }, [connectionMode, historyPoints]);
 
   if (!actual) {
     return (
@@ -398,7 +396,16 @@ export function SensorDetailScreen({ route, navigation }: Props) {
               </Card>
             )}
 
-            <Text style={styles.sectionTitle}>Histórico reciente</Text>
+            {connectionMode === "online" ? (
+              <Text style={styles.sectionTitle}>Histórico reciente</Text>
+            ) : (
+              <Card style={styles.padCard}>
+                <Text style={styles.historyUnavailable}>
+                  El histórico está disponible en modo Online. En Directo el
+                  hub solo informa el valor actual.
+                </Text>
+              </Card>
+            )}
           </View>
         }
         renderItem={({ item, index }) => {
@@ -663,6 +670,11 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
     textTransform: "uppercase",
     marginTop: 8,
+  },
+  historyUnavailable: {
+    fontSize: 14,
+    color: COLORS.textMuted,
+    lineHeight: 20,
   },
   historyRow: {
     flexDirection: "row",

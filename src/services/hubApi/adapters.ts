@@ -123,8 +123,8 @@ export function mapRelayListResponse(payload: unknown): readonly RelayState[] {
       typeof data.address !== "number" ||
       typeof data.alias !== "string" ||
       typeof data.active !== "boolean" ||
-      !isBooleanTuple(data.state) ||
-      !isBooleanTuple(data.input_state) ||
+      !isBooleanChannelArray(data.state) ||
+      !isBooleanChannelArray(data.input_state) ||
       !isOptionalStringArray(data.zones)
     ) {
       throw new HubApiInvalidResponseError();
@@ -135,8 +135,8 @@ export function mapRelayListResponse(payload: unknown): readonly RelayState[] {
       address: data.address,
       alias: data.alias,
       active: data.active,
-      state: [data.state[0], data.state[1]],
-      input_state: [data.input_state[0], data.input_state[1]],
+      state: [...data.state],
+      input_state: [...data.input_state],
       zones: data.zones ? [...data.zones] : undefined,
     };
   });
@@ -189,14 +189,14 @@ function isOptionalStringArray(
   );
 }
 
-function isBooleanTuple(
-  value: unknown
-): value is readonly [boolean, boolean] {
+// Un booleano por canal: gpio=1, relay_2ch=2, relay_4ch=4 (ver firmware
+// RelayModule2CH.h / RelayModule4CH.h / handleRelayList).
+function isBooleanChannelArray(value: unknown): value is readonly boolean[] {
   return (
     Array.isArray(value) &&
-    value.length === 2 &&
-    typeof value[0] === "boolean" &&
-    typeof value[1] === "boolean"
+    value.length >= 1 &&
+    value.length <= 4 &&
+    value.every((item) => typeof item === "boolean")
   );
 }
 

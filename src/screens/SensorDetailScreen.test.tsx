@@ -156,7 +156,7 @@ describe("SensorDetailScreen (icon-first redesign)", () => {
     expect(screen.getByText("65.0%")).toBeTruthy();
   });
 
-  it("highlights history rows that fall out of range", () => {
+  it("no muestra historial en Directo (el hub no guarda series): solo la nota", () => {
     useHubDataStore.setState({
       config,
       actual,
@@ -180,9 +180,11 @@ describe("SensorDetailScreen (icon-first redesign)", () => {
 
     render(<SensorDetailScreen {...makeProps("sensor-bme280-0")} />);
 
-    expect(screen.getByTestId("history-row-out-of-range-0")).toHaveStyle({
-      backgroundColor: "#FBDCDC",
-    });
+    expect(screen.queryByTestId("history-row-0")).toBeNull();
+    expect(screen.queryByTestId("history-row-out-of-range-0")).toBeNull();
+    expect(
+      screen.getByText(/El histórico está disponible en modo Online/i)
+    ).toBeTruthy();
   });
 
   it("renders a supported sensor without a configured range without crashing", () => {
@@ -211,6 +213,6 @@ describe("SensorDetailScreen (icon-first redesign)", () => {
 
     expect(screen.getByText("CO2")).toBeTruthy();
     expect(screen.queryByTestId("sensor-range-marker")).toBeNull();
-    expect(screen.getByTestId("history-row-0")).toBeTruthy();
+    expect(screen.queryByTestId("history-row-0")).toBeNull();
   });
 });
