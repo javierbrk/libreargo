@@ -15,7 +15,10 @@ import {
   UNIT_MAP,
 } from "../features/sensors/sensorMeasurementCatalog";
 import { getMeasurementRange } from "../features/sensors/getMeasurementRange";
-import { resolveSensorReading } from "../features/sensors/resolveSensorReading";
+import {
+  resolveActualSensorId,
+  resolveSensorReading,
+} from "../features/sensors/resolveSensorReading";
 import { useHubDataStore } from "../stores/hubDataStore";
 import { useHubStore } from "../stores/hubStore";
 import { getSensorHistory } from "../services/hubDataService";
@@ -162,11 +165,17 @@ export function SensorDetailScreen({ route, navigation }: Props) {
     void (async () => {
       try {
         const field = getInfluxField(measurementKey, sensorDevice.subtype);
+        // Con id derivable, el histórico es del sensor puntual; sin él cae al
+        // agregado del hub (limitación conocida para onewire/bme280).
+        const sensorInfluxId = config
+          ? resolveActualSensorId(sensorDevice, config)
+          : null;
         const points = await getSensorHistory(
           hubHash,
           field,
           selectedRange.range,
-          selectedRange.bucket
+          selectedRange.bucket,
+          sensorInfluxId ?? undefined
         );
         if (!cancelled) {
           setHistoryPoints(points);
@@ -186,7 +195,7 @@ export function SensorDetailScreen({ route, navigation }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [connectionMode, measurementKey, sensorDevice, hubHash, selectedRange]);
+  }, [connectionMode, measurementKey, sensorDevice, hubHash, selectedRange, config]);
 
   const historyRows = useMemo<readonly HistoryRow[]>(() => {
     // El histórico solo existe en Online (viene de InfluxDB). El hub no

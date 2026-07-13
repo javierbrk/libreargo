@@ -29,10 +29,11 @@ const ACTUAL_TYPE_FOR_SINGLETON_CONFIG_TYPE: Record<string, string> = {
 };
 
 // Reconstruye el id que arma el firmware en getSensorID() (SensorCapacitive.h,
-// HD38Sensor.h, ModbusSoil7in1Sensor.h, ModbusTHSensor.h) a partir de los
-// campos de config.json, para correlacionar un sensor de /config con su
-// entrada en /actual.sensors[].
-function reconstructActualSensorId(sensor: SensorConfig): string | null {
+// HD38Sensor.h, ModbusSoil7in1Sensor.h, ModbusTHSensor.h, SensorSCD30.h) a
+// partir de los campos de config.json, para correlacionar un sensor de
+// /config con su entrada en /actual.sensors[] o con el tag `sensor` de
+// InfluxDB (el firmware usa el mismo id en ambos lados).
+export function reconstructActualSensorId(sensor: SensorConfig): string | null {
   const pin = sensor.config.pin;
   if ((sensor.type === "capacitive" || sensor.type === "hd38") && typeof pin === "number") {
     return `m-adc-${pin}`;
@@ -45,8 +46,26 @@ function reconstructActualSensorId(sensor: SensorConfig): string | null {
   if (sensor.type === "modbus_th" && address !== null) {
     return `th-mod-${address}`;
   }
+  if (sensor.type === "scd30") {
+    // SCD30 tiene dirección I2C fija (0x61), el firmware siempre genera este id.
+    return "thc-i2c-0x61";
+  }
 
   return null;
+}
+
+/**
+ * Id del sensor físico (formato del firmware) para el `device` visible,
+ * resolviendo su entrada de config por índice. Null si no es derivable
+ * (onewire depende de la ROM del chip, bme280 de la dirección detectada).
+ */
+export function resolveActualSensorId(
+  device: Device,
+  config: HubConfig
+): string | null {
+  const index = extractConfigIndex(device.id);
+  const sensorConfig = index !== null ? config.sensors[index] : undefined;
+  return sensorConfig ? reconstructActualSensorId(sensorConfig) : null;
 }
 
 function resolveModbusAddress(config: Record<string, unknown>): number | null {

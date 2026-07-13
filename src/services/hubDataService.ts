@@ -101,11 +101,12 @@ export async function getSensorHistory(
   hubHash: string,
   field: string,
   range: string,
-  bucket: string
+  bucket: string,
+  sensorId?: string
 ): Promise<readonly HistoryPoint[]> {
   const client = getHubApiClient("online") as Partial<InfluxHubExtras>;
   if (!client.getHistory) {
     return [];
   }
-  return client.getHistory(hubHash, field, range, bucket);
+  return client.getHistory(hubHash, field, range, bucket, sensorId);
 }

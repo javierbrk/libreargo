@@ -32,9 +32,12 @@ export interface InfluxHubExtras {
     hash: string,
     field: string,
     range: string,
-    bucket: string
+    bucket: string,
+    sensorId?: string
   ): Promise<readonly HistoryPoint[]>;
 }
+
+const SAFE_SENSOR_ID = /^[a-zA-Z0-9_-]+$/;
 
 function whereDevice(hash: string): string {
   return `device='${escapeInfluxTag(deviceTagForHash(hash))}'`;
@@ -49,11 +52,14 @@ export function createInfluxHubApiClient(): HubApiClient & InfluxHubExtras {
     },
 
     async getActual(hash: string): Promise<SensorData> {
+      // GROUP BY "sensor" → una serie por sensor físico, para que la app
+      // muestre el valor real de cada uno (no el agregado del hub).
       const series = await queryInflux(
         `SELECT last("temp") AS temp, last("hum") AS hum, last("co2") AS co2, ` +
           `last("press") AS press, last("moisture") AS moisture, ` +
           `last("soil_hum") AS soil_hum ` +
-          `FROM "medicionesCO2" WHERE ${whereDevice(hash)} AND time > now()-${RECENT_WINDOW}`
+          `FROM "medicionesCO2" WHERE ${whereDevice(hash)} AND time > now()-${RECENT_WINDOW} ` +
+          `GROUP BY "sensor"`
       );
       return mapInfluxActual(series);
     },
@@ -95,7 +101,8 @@ export function createInfluxHubApiClient(): HubApiClient & InfluxHubExtras {
       hash: string,
       field: string,
       range: string,
-      bucket: string
+      bucket: string,
+      sensorId?: string
     ): Promise<readonly HistoryPoint[]> {
       if (!SAFE_IDENTIFIER.test(field)) {
         throw new Error(`Campo inválido para histórico: ${field}`);
@@ -103,9 +110,16 @@ export function createInfluxHubApiClient(): HubApiClient & InfluxHubExtras {
       if (!SAFE_DURATION.test(range) || !SAFE_DURATION.test(bucket)) {
         throw new Error("Rango/bucket inválido para histórico");
       }
+      if (sensorId !== undefined && !SAFE_SENSOR_ID.test(sensorId)) {
+        throw new Error(`Id de sensor inválido para histórico: ${sensorId}`);
+      }
+      // Con sensorId filtramos la serie del sensor puntual; sin él (id no
+      // derivable de la config, ej. onewire) cae al agregado del hub, que
+      // mezcla sensores del mismo tipo — no peor que el comportamiento previo.
+      const sensorFilter = sensorId ? ` AND "sensor"='${sensorId}'` : "";
       const series = await queryInflux(
         `SELECT mean("${field}") FROM "medicionesCO2" ` +
-          `WHERE ${whereDevice(hash)} AND time > now()-${range} ` +
+          `WHERE ${whereDevice(hash)}${sensorFilter} AND time > now()-${range} ` +
           `GROUP BY time(${bucket}) fill(none)`
       );
       return mapInfluxHistory(series);
