@@ -69,6 +69,47 @@ export function getInfluxDb(): string {
  * Ejecuta una query InfluxQL y devuelve las series del primer statement.
  * `epoch=s` → timestamps en segundos Unix (número en la columna `time`).
  */
+// IP v4 actual de grafana.altermundi.net. Fallback para teléfonos cuyo DNS
+// de sistema no resuelve el hostname (caso real: Chrome carga la URL pero el
+// fetch de la app falla — Chrome usa su propio resolvedor DoH, OkHttp usa el
+// del sistema). Si la IP del servidor cambia, actualizar junto con la infra.
+const INFLUX_FALLBACK_IP = "138.255.88.25";
+
+function describeError(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return String(error);
+}
+
+async function fetchWithTimeout(url: string): Promise<FetchLikeResponse> {
+  const controller =
+    typeof AbortController !== "undefined" ? new AbortController() : undefined;
+  const timer = controller
+    ? setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS)
+    : undefined;
+  try {
+    return (await fetch(url, {
+      method: "GET",
+      signal: controller?.signal,
+    })) as unknown as FetchLikeResponse;
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
+function urlWithFallbackHost(url: string): string | null {
+  const base = getInfluxBaseUrl();
+  const host = base.replace(/^https?:\/\//, "").split(":")[0];
+  // Solo tiene sentido reintentar si la base usa hostname (no una IP literal).
+  if (!host || /^\d+\.\d+\.\d+\.\d+$/.test(host)) {
+    return null;
+  }
+  return url.replace(host, INFLUX_FALLBACK_IP);
+}
+
 export async function queryInflux(
   q: string,
   epoch: string = "s"
@@ -79,23 +120,24 @@ export async function queryInflux(
     `&epoch=${encodeURIComponent(epoch)}` +
     `&q=${encodeURIComponent(q)}`;
 
-  const controller =
-    typeof AbortController !== "undefined" ? new AbortController() : undefined;
-  const timer = controller
-    ? setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS)
-    : undefined;
-
   let response: FetchLikeResponse;
   try {
-    response = (await fetch(url, {
-      method: "GET",
-      signal: controller?.signal,
-    })) as unknown as FetchLikeResponse;
-  } catch {
-    throw new HubApiNetworkError("No se pudo conectar con InfluxDB");
-  } finally {
-    if (timer) {
-      clearTimeout(timer);
+    response = await fetchWithTimeout(url);
+  } catch (primaryError: unknown) {
+    const fallbackUrl = urlWithFallbackHost(url);
+    if (!fallbackUrl) {
+      throw new HubApiNetworkError(
+        `No se pudo conectar con InfluxDB (${describeError(primaryError)})`
+      );
+    }
+    try {
+      response = await fetchWithTimeout(fallbackUrl);
+    } catch {
+      // Reportamos la causa del intento primario (hostname), que es la más
+      // diagnóstica: "Unable to resolve host" delata DNS, "timeout" delata red.
+      throw new HubApiNetworkError(
+        `No se pudo conectar con InfluxDB (${describeError(primaryError)})`
+      );
     }
   }
 
