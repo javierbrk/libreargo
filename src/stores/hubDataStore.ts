@@ -90,8 +90,15 @@ export const useHubDataStore = create<HubDataState & HubDataActions>(
         const alarms = mode === "online" ? [] : await getAlarms(target, mode);
         const devices = buildDevices(config, relays);
         set({ config, actual, relays, alarms, devices, loading: false });
-      } catch {
-        set({ error: "No se pudieron cargar los datos del hub", loading: false });
+      } catch (e: unknown) {
+        // El mensaje genérico solo, sin la causa, hace imposible diagnosticar
+        // en campo (¿red? ¿respuesta inválida? ¿timeout?). Los errores de la
+        // capa de servicios ya traen mensajes aptos para usuario.
+        const detail = e instanceof Error && e.message ? ` (${e.message})` : "";
+        set({
+          error: `No se pudieron cargar los datos del hub${detail}`,
+          loading: false,
+        });
       }
     },
 

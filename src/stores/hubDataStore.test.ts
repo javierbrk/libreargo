@@ -171,9 +171,11 @@ describe("hubDataStore", () => {
 
     await useHubDataStore.getState().loadHubData("192.168.1.50");
 
+    // El error incluye la causa entre paréntesis para poder diagnosticar
+    // en campo (¿red?, ¿timeout?, ¿respuesta inválida?).
     expect(useHubDataStore.getState()).toMatchObject({
       loading: false,
-      error: "No se pudieron cargar los datos del hub",
+      error: "No se pudieron cargar los datos del hub (hub offline)",
     });
   });
 
