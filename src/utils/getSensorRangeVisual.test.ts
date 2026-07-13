@@ -43,6 +43,32 @@ describe("getSensorRangeVisual", () => {
     });
   });
 
+  it("no presta el agregado a un sensor sin lectura propia cuando hay datos por sensor", () => {
+    // Caso real: scd30 configurado pero físicamente ausente. Hay datos por
+    // sensor (sensors[] no vacío) y este no aparece → sin dato, no el valor
+    // de otro sensor.
+    const device: Device = {
+      id: "sensor-scd30-0",
+      type: "sensor",
+      name: "SCD30",
+      subtype: "scd30",
+      sensorType: "temperature",
+      zones: [],
+    };
+    const actualWithPerSensor = {
+      ...mockActual,
+      sensors: [
+        {
+          id: "m-adc-35",
+          type: "Capacitive",
+          readings: [{ value: "-50.1", key_var: 3 }],
+        },
+      ],
+    };
+
+    expect(getSensorRangeVisual(device, mockConfig, actualWithPerSensor)).toBeNull();
+  });
+
   it("devuelve null para actuadores", () => {
     const device: Device = {
       id: "relay-1",

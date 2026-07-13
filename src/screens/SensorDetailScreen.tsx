@@ -45,10 +45,15 @@ const STATE_HEADLINE: Record<SemaforoState, string> = {
 };
 
 const HISTORY_RANGES = [
-  { label: "1h", range: "1h", bucket: "1m" },
-  { label: "24h", range: "24h", bucket: "5m" },
-  { label: "7d", range: "7d", bucket: "1h" },
+  { label: "1h", range: "1h", bucket: "1m", bucketSeconds: 60, showDate: false },
+  { label: "24h", range: "24h", bucket: "5m", bucketSeconds: 300, showDate: true },
+  { label: "7d", range: "7d", bucket: "1h", bucketSeconds: 3600, showDate: true },
 ] as const;
+
+// Huecos mayores a este múltiplo del bucket cortan la línea del gráfico
+// (hub apagado / telemetría interrumpida): el hueco se ve, no se inventa
+// continuidad uniendo puntos de días distintos.
+const CHART_GAP_BUCKETS = 3;
 
 type HistoryRange = (typeof HISTORY_RANGES)[number];
 
@@ -57,10 +62,13 @@ interface HistoryRow {
   readonly value: number | null;
 }
 
-function formatTime(iso: string): string {
+function formatTime(iso: string, withDate: boolean): string {
   const d = new Date(iso);
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const hhmm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  // En rangos que cruzan días, la hora sola es engañosa: filas de días
+  // distintos parecen horas consecutivas del mismo día.
+  return withDate ? `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${hhmm}` : hhmm;
 }
 
 function getSensorLabelFromId(sensorId: string): string {
@@ -165,17 +173,27 @@ export function SensorDetailScreen({ route, navigation }: Props) {
     void (async () => {
       try {
         const field = getInfluxField(measurementKey, sensorDevice.subtype);
-        // Con id derivable, el histórico es del sensor puntual; sin él cae al
-        // agregado del hub (limitación conocida para onewire/bme280).
+        // Sin id derivable (onewire/bme280) no consultamos: el agregado del
+        // hub mezcla sensores y se mostraría como historial de este sensor.
         const sensorInfluxId = config
           ? resolveActualSensorId(sensorDevice, config)
           : null;
+        if (sensorInfluxId === null) {
+          if (!cancelled) {
+            setHistoryPoints([]);
+            setHistoryError(
+              "Este sensor no tiene serie propia identificable en la telemetría"
+            );
+            setHistoryLoading(false);
+          }
+          return;
+        }
         const points = await getSensorHistory(
           hubHash,
           field,
           selectedRange.range,
           selectedRange.bucket,
-          sensorInfluxId ?? undefined
+          sensorInfluxId
         );
         if (!cancelled) {
           setHistoryPoints(points);
@@ -248,8 +266,14 @@ export function SensorDetailScreen({ route, navigation }: Props) {
 
   const Icon = getDeviceIcon(sensorDevice);
   const perSensorValue = config ? resolveSensorReading(sensorDevice, config, actual) : null;
+  // Mismo criterio que getSensorRangeVisual: el agregado legacy solo aplica
+  // si no hay datos por sensor. Un sensor configurado pero sin lectura propia
+  // muestra "sin dato", no el valor prestado de otro.
   const actualValue =
-    perSensorValue ?? Number.parseFloat(actual[ACTUAL_KEY_MAP[measurementKey]]);
+    perSensorValue ??
+    (actual.sensors.length === 0
+      ? Number.parseFloat(actual[ACTUAL_KEY_MAP[measurementKey]])
+      : Number.NaN);
   const hasValue = Number.isFinite(actualValue);
   const unit = UNIT_MAP[measurementKey] ?? "";
   const status = measurementRange
@@ -277,7 +301,7 @@ export function SensorDetailScreen({ route, navigation }: Props) {
                 <Icon size={84} color={status.fg} />
               </IconBadge>
               <Text style={[styles.heroState, { color: status.fg }]}>
-                {STATE_HEADLINE[status.state]}
+                {hasValue ? STATE_HEADLINE[status.state] : "Sin dato"}
               </Text>
               <View style={styles.heroValueRow}>
                 <Text
@@ -397,7 +421,11 @@ export function SensorDetailScreen({ route, navigation }: Props) {
                     <ActivityIndicator size="small" color={COLORS.primary} />
                   </View>
                 ) : (
-                  <TimeSeriesChart points={historyPoints} unit={unit} />
+                  <TimeSeriesChart
+                    points={historyPoints}
+                    unit={unit}
+                    maxGapSeconds={selectedRange.bucketSeconds * CHART_GAP_BUCKETS}
+                  />
                 )}
                 {historyError && (
                   <Text style={styles.historyError}>{historyError}</Text>
@@ -436,7 +464,9 @@ export function SensorDetailScreen({ route, navigation }: Props) {
                 itemStatus && { backgroundColor: itemStatus.bg },
               ]}
             >
-              <Text style={styles.historyTime}>{formatTime(item.timestamp)}</Text>
+              <Text style={styles.historyTime}>
+                {formatTime(item.timestamp, selectedRange.showDate)}
+              </Text>
               <Text
                 style={[
                   styles.historyValue,

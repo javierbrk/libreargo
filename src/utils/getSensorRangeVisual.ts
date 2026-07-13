@@ -22,8 +22,15 @@ export function getSensorRangeVisual(
   }
   const range = getMeasurementRange(measurementKey, config);
   const actualKey = ACTUAL_KEY_MAP[measurementKey];
+  const perSensor = resolveSensorReading(device, config, actual);
+  // Solo caemos al agregado legacy a_* cuando NO hay datos por sensor
+  // (firmware viejo sin sensors[]). Si los hay y este sensor no aparece,
+  // es que no reporta: mostrar el valor de otro sensor sería inventar.
   const current =
-    resolveSensorReading(device, config, actual) ?? Number.parseFloat(actual[actualKey]);
+    perSensor ??
+    (actual.sensors.length === 0
+      ? Number.parseFloat(actual[actualKey])
+      : Number.NaN);
 
   if (!range || !Number.isFinite(current) || range.min >= range.max) {
     return null;

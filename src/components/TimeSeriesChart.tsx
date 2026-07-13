@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet } from "react-native";
-import Svg, { Line, Polyline } from "react-native-svg";
+import Svg, { Circle, Line, Polyline } from "react-native-svg";
 import { COLORS } from "../constants";
 
 export interface TimeSeriesPoint {
@@ -10,6 +10,30 @@ export interface TimeSeriesPoint {
 interface TimeSeriesChartProps {
   readonly points: readonly TimeSeriesPoint[];
   readonly unit?: string;
+  /**
+   * Hueco máximo (en segundos) entre dos puntos consecutivos para unirlos
+   * con línea. Si la distancia lo supera (hub apagado, corte de telemetría),
+   * la línea se corta y el hueco queda visible en vez de inventar continuidad.
+   * Sin definir, se une todo (comportamiento previo).
+   */
+  readonly maxGapSeconds?: number;
+}
+
+function splitOnGaps(
+  points: readonly TimeSeriesPoint[],
+  maxGapSeconds: number | undefined
+): readonly (readonly TimeSeriesPoint[])[] {
+  if (maxGapSeconds === undefined || points.length === 0) {
+    return [points];
+  }
+  const segments: TimeSeriesPoint[][] = [[points[0]]];
+  for (let i = 1; i < points.length; i++) {
+    if (points[i].t - points[i - 1].t > maxGapSeconds) {
+      segments.push([]);
+    }
+    segments[segments.length - 1].push(points[i]);
+  }
+  return segments;
 }
 
 const WIDTH = 320;
@@ -17,7 +41,11 @@ const HEIGHT = 150;
 const PAD_X = 12;
 const PAD_Y = 14;
 
-export function TimeSeriesChart({ points, unit = "" }: TimeSeriesChartProps) {
+export function TimeSeriesChart({
+  points,
+  unit = "",
+  maxGapSeconds,
+}: TimeSeriesChartProps) {
   const finitePoints = points.filter(
     (p) => Number.isFinite(p.t) && Number.isFinite(p.v)
   );
@@ -42,9 +70,10 @@ export function TimeSeriesChart({ points, unit = "" }: TimeSeriesChartProps) {
   const yFor = (v: number) =>
     HEIGHT - PAD_Y - ((v - minV) / valueSpan) * (HEIGHT - PAD_Y * 2);
 
-  const polylinePoints = finitePoints
-    .map((point) => `${xFor(point.t)},${yFor(point.v)}`)
-    .join(" ");
+  const segments = splitOnGaps(finitePoints, maxGapSeconds).map((segment) => ({
+    points: segment,
+    svg: segment.map((point) => `${xFor(point.t)},${yFor(point.v)}`).join(" "),
+  }));
 
   return (
     <View style={styles.wrap}>
@@ -80,14 +109,28 @@ export function TimeSeriesChart({ points, unit = "" }: TimeSeriesChartProps) {
           stroke={COLORS.border}
           strokeWidth={1}
         />
-        <Polyline
-          points={polylinePoints}
-          fill="none"
-          stroke={COLORS.primary}
-          strokeWidth={3}
-          strokeLinejoin="round"
-          strokeLinecap="round"
-        />
+        {segments.map((segment, index) =>
+          segment.points.length === 1 ? (
+            // Punto aislado entre huecos: un círculo, o quedaría invisible.
+            <Circle
+              key={index}
+              cx={xFor(segment.points[0].t)}
+              cy={yFor(segment.points[0].v)}
+              r={3}
+              fill={COLORS.primary}
+            />
+          ) : (
+            <Polyline
+              key={index}
+              points={segment.svg}
+              fill="none"
+              stroke={COLORS.primary}
+              strokeWidth={3}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+          )
+        )}
       </Svg>
     </View>
   );
