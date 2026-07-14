@@ -27,6 +27,18 @@ function formatNumber(value: number, unit: string): string {
   return `${value.toFixed(1)}${unit}`;
 }
 
+// Nombre corto para mostrar bajo el ícono. Los nombres de sensor del hub
+// ("Soil5") ya son cortos; los labels genéricos largos se abrevian.
+const NAME_ABBREVIATIONS: Readonly<Record<string, string>> = {
+  Temperatura: "Temp",
+  Humedad: "Hum",
+  Presión: "Pres",
+};
+
+function abbreviateName(name: string): string {
+  return NAME_ABBREVIATIONS[name] ?? name;
+}
+
 function isRelayOn(relay: RelayState | null | undefined): boolean {
   if (!relay) return false;
   return relay.active && relay.state.some(Boolean);
@@ -50,12 +62,17 @@ export function DeviceListItem({
     return (
       <Card
         onPress={() => onPress(device)}
-        accessibilityLabel={`${sensorVisual.label} ${formatNumber(current, unit)}, ${STATE_LABEL[status.state]}`}
+        accessibilityLabel={`${device.name}: ${sensorVisual.label} ${formatNumber(current, unit)}, ${STATE_LABEL[status.state]}`}
         style={styles.row}
       >
-        <IconBadge bg={status.bg} size={96}>
-          <Icon size={64} color={status.fg} />
-        </IconBadge>
+        <View style={styles.iconCol}>
+          <IconBadge bg={status.bg} size={96}>
+            <Icon size={64} color={status.fg} />
+          </IconBadge>
+          <Text style={styles.iconName} numberOfLines={1}>
+            {abbreviateName(device.name)}
+          </Text>
+        </View>
         <View style={styles.body}>
           <View style={styles.valueRow}>
             <Text
@@ -157,6 +174,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 16,
     padding: 16,
+  },
+  iconCol: {
+    alignItems: "center",
+    width: 96,
+  },
+  iconName: {
+    marginTop: 4,
+    fontSize: 13,
+    fontWeight: "700",
+    color: COLORS.textSecondary,
+    maxWidth: 96,
+    textAlign: "center",
   },
   body: {
     flex: 1,

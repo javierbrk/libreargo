@@ -425,6 +425,7 @@ export function SensorDetailScreen({ route, navigation }: Props) {
                     points={historyPoints}
                     unit={unit}
                     maxGapSeconds={selectedRange.bucketSeconds * CHART_GAP_BUCKETS}
+                    showDateInAxis={selectedRange.showDate}
                   />
                 )}
                 {historyError && (

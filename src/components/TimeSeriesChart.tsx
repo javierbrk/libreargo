@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet } from "react-native";
-import Svg, { Circle, Line, Polyline } from "react-native-svg";
+import Svg, { Circle, Line, Polyline, Text as SvgText } from "react-native-svg";
 import { COLORS } from "../constants";
 
 export interface TimeSeriesPoint {
@@ -17,6 +17,15 @@ interface TimeSeriesChartProps {
    * Sin definir, se une todo (comportamiento previo).
    */
   readonly maxGapSeconds?: number;
+  /** Incluir dd/mm en las marcas del eje X (rangos que cruzan días). */
+  readonly showDateInAxis?: boolean;
+}
+
+function formatAxisTime(epochSeconds: number, withDate: boolean): string {
+  const d = new Date(epochSeconds * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const hhmm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return withDate ? `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${hhmm}` : hhmm;
 }
 
 function splitOnGaps(
@@ -37,14 +46,19 @@ function splitOnGaps(
 }
 
 const WIDTH = 320;
-const HEIGHT = 150;
-const PAD_X = 12;
-const PAD_Y = 14;
+const HEIGHT = 170;
+// Márgenes asimétricos: espacio a la izquierda para las etiquetas de valor
+// del eje Y y abajo para los timestamps del eje X.
+const PAD_LEFT = 44;
+const PAD_RIGHT = 12;
+const PAD_TOP = 10;
+const PAD_BOTTOM = 24;
 
 export function TimeSeriesChart({
   points,
   unit = "",
   maxGapSeconds,
+  showDateInAxis = false,
 }: TimeSeriesChartProps) {
   const finitePoints = points.filter(
     (p) => Number.isFinite(p.t) && Number.isFinite(p.v)
@@ -62,50 +76,78 @@ export function TimeSeriesChart({
   const maxT = Math.max(...finitePoints.map((p) => p.t));
   const minV = Math.min(...finitePoints.map((p) => p.v));
   const maxV = Math.max(...finitePoints.map((p) => p.v));
+  const midV = (minV + maxV) / 2;
   const valueSpan = maxV - minV || 1;
   const timeSpan = maxT - minT || 1;
 
   const xFor = (t: number) =>
-    PAD_X + ((t - minT) / timeSpan) * (WIDTH - PAD_X * 2);
+    PAD_LEFT + ((t - minT) / timeSpan) * (WIDTH - PAD_LEFT - PAD_RIGHT);
   const yFor = (v: number) =>
-    HEIGHT - PAD_Y - ((v - minV) / valueSpan) * (HEIGHT - PAD_Y * 2);
+    HEIGHT - PAD_BOTTOM - ((v - minV) / valueSpan) * (HEIGHT - PAD_TOP - PAD_BOTTOM);
 
   const segments = splitOnGaps(finitePoints, maxGapSeconds).map((segment) => ({
     points: segment,
     svg: segment.map((point) => `${xFor(point.t)},${yFor(point.v)}`).join(" "),
   }));
 
+  const yTicks = [maxV, midV, minV];
+  const xTicks = [minT, (minT + maxT) / 2, maxT];
+  const xAnchor = (index: number) =>
+    index === 0 ? "start" : index === xTicks.length - 1 ? "end" : "middle";
+
   return (
     <View style={styles.wrap}>
-      <View style={styles.boundsRow}>
-        <Text style={styles.boundText}>
-          {maxV.toFixed(1)}
-          {unit}
-        </Text>
-        <Text style={styles.boundText}>
-          {minV.toFixed(1)}
-          {unit}
-        </Text>
-      </View>
       <Svg
         width="100%"
         height={HEIGHT}
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
         accessibilityLabel="Gráfico histórico"
       >
+        {/* Eje Y: valor máx/medio/mín con línea de guía horizontal */}
+        {yTicks.map((v, index) => (
+          <Line
+            key={`grid-${index}`}
+            x1={PAD_LEFT}
+            y1={yFor(v)}
+            x2={WIDTH - PAD_RIGHT}
+            y2={yFor(v)}
+            stroke={COLORS.border}
+            strokeWidth={1}
+            strokeDasharray={index === 1 ? "3,3" : undefined}
+          />
+        ))}
+        {yTicks.map((v, index) => (
+          <SvgText
+            key={`ylab-${index}`}
+            x={PAD_LEFT - 6}
+            y={yFor(v) + 4}
+            fontSize={10}
+            fontWeight="600"
+            fill={COLORS.textMuted}
+            textAnchor="end"
+          >
+            {`${v.toFixed(1)}${unit}`}
+          </SvgText>
+        ))}
+        {/* Eje X: timestamps inicio/medio/fin */}
+        {xTicks.map((t, index) => (
+          <SvgText
+            key={`xlab-${index}`}
+            x={xFor(t)}
+            y={HEIGHT - 6}
+            fontSize={10}
+            fontWeight="600"
+            fill={COLORS.textMuted}
+            textAnchor={xAnchor(index)}
+          >
+            {formatAxisTime(t, showDateInAxis)}
+          </SvgText>
+        ))}
         <Line
-          x1={PAD_X}
-          y1={PAD_Y}
-          x2={PAD_X}
-          y2={HEIGHT - PAD_Y}
-          stroke={COLORS.border}
-          strokeWidth={1}
-        />
-        <Line
-          x1={PAD_X}
-          y1={HEIGHT - PAD_Y}
-          x2={WIDTH - PAD_X}
-          y2={HEIGHT - PAD_Y}
+          x1={PAD_LEFT}
+          y1={PAD_TOP}
+          x2={PAD_LEFT}
+          y2={HEIGHT - PAD_BOTTOM}
           stroke={COLORS.border}
           strokeWidth={1}
         />
@@ -138,17 +180,7 @@ export function TimeSeriesChart({
 
 const styles = StyleSheet.create({
   wrap: {
-    minHeight: HEIGHT + 22,
-  },
-  boundsRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 4,
-  },
-  boundText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: COLORS.textMuted,
+    minHeight: HEIGHT,
   },
   empty: {
     height: HEIGHT,

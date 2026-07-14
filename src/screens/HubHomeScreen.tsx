@@ -75,6 +75,7 @@ export function HubHomeScreen({ navigation, route }: Props) {
   );
   const [selectedZones, setSelectedZones] = useState<readonly string[]>([]);
   const [zoneSheetVisible, setZoneSheetVisible] = useState(false);
+  const [problemsFirst, setProblemsFirst] = useState(false);
   const zoneAssignments = useZoneStore((s) => s.assignments);
 
   useEffect(() => {
@@ -234,12 +235,30 @@ export function HubHomeScreen({ navigation, route }: Props) {
     navigation.navigate("Alarms", { hubHash });
   }, [navigation, hubHash]);
 
+  // "Revisar ahora" sin alarmas reales: los problemas son sensores fuera de
+  // rango — llevar a esos datos (filtrar sensores y ordenarlos por gravedad)
+  // en vez de a una pantalla de alarmas vacía.
+  const handleProblemsPress = useCallback(() => {
+    setFilter("sensores");
+    setProblemsFirst(true);
+  }, []);
+
   const sections = useMemo(() => {
     type Item =
       | { kind: "section"; key: string; label: string }
       | { kind: "device"; key: string; device: Device };
 
+    const severityRank = (device: Device): number => {
+      const visual = sensorVisuals.get(device.id);
+      if (!visual) return 3;
+      const state = semaforo(visual.current, visual.min, visual.max).state;
+      return state === "bad" ? 0 : state === "warn" ? 1 : 2;
+    };
+
     const sensors = filteredDevices.filter((d) => d.type === "sensor");
+    if (problemsFirst) {
+      sensors.sort((a, b) => severityRank(a) - severityRank(b));
+    }
     const actuators = filteredDevices.filter((d) => d.type === "actuator");
     const items: Item[] = [];
     if (sensors.length > 0 && filter !== "actuadores") {
@@ -263,7 +282,7 @@ export function HubHomeScreen({ navigation, route }: Props) {
       );
     }
     return items;
-  }, [filteredDevices, filter]);
+  }, [filteredDevices, filter, problemsFirst, sensorVisuals]);
 
   const zonesButtonDisabled = availableZones.length === 0;
   const zonesButtonLabel =
@@ -333,7 +352,11 @@ export function HubHomeScreen({ navigation, route }: Props) {
               badCount={overallState.badCount}
               warnCount={overallState.warnCount}
               onPress={
-                activeAlarmCount > 0 ? handleAlarmSummaryPress : undefined
+                activeAlarmCount > 0
+                  ? handleAlarmSummaryPress
+                  : overallState.state !== "ok"
+                    ? handleProblemsPress
+                    : undefined
               }
             />
             <View testID="hub-home-filters-row" style={styles.filtersRow}>

@@ -246,6 +246,21 @@ describe("HubHomeScreen", () => {
     });
   });
 
+  it("sin alarmas reales, tocar el resumen NO navega: muestra los datos con problemas en la lista", () => {
+    // Los "problemas" del banner son sensores fuera de rango (25.5 vs
+    // 37.3-37.7 del mock): tocar debe llevar a esos datos, no a una
+    // pantalla de alarmas vacía.
+    const props = makeProps();
+
+    render(<HubHomeScreen {...props} />);
+    fireEvent.press(screen.getByText("Revisar ahora"));
+
+    expect(props.navigation.navigate).not.toHaveBeenCalledWith(
+      "Alarms",
+      expect.anything()
+    );
+  });
+
   it("navega a alarmas al tocar el resumen cuando hay alertas activas", () => {
     useHubDataStore.setState({
       alarms: [
