@@ -118,6 +118,28 @@ describe("buildHubSensorDevices", () => {
     ]);
   });
 
+  it("reconoce internal_temp (temperatura interna del ESP32) sin necesitar measurementKey", () => {
+    const internalTempConfig: HubConfig = {
+      ...config,
+      sensors: [
+        {
+          type: "internal_temp",
+          enabled: true,
+          config: {},
+          zones: [],
+        },
+      ],
+    };
+
+    expect(buildHubSensorDevices(internalTempConfig)).toEqual([
+      expect.objectContaining({
+        id: "sensor-internal_temp-0",
+        subtype: "internal_temp",
+        sensorType: "temperature",
+      }),
+    ]);
+  });
+
   it("mantiene estable el id visible cuando un sensor anterior queda deshabilitado", () => {
     const disabledEarlierSensorConfig: HubConfig = {
       ...config,

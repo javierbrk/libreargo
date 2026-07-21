@@ -15,6 +15,7 @@ const config: HubConfig = {
     { type: "hd38", enabled: true, config: { pin: 34, name: "Soil4" } }, // index 3
     { type: "modbus_soil_7in1", enabled: true, config: { addresses: [2] } }, // index 4
     { type: "onewire", enabled: true, config: { pin: 4 } }, // index 5
+    { type: "internal_temp", enabled: true, config: {} }, // index 6
   ],
   relays: [],
 };
@@ -48,6 +49,7 @@ const actual: SensorData = {
       ],
     },
     { id: "t-1w-ab12", type: "OneWire", readings: [{ value: "22.4", key_var: 0 }] },
+    { id: "sys-temp", type: "InternalTemp", readings: [{ value: "46.7", key_var: 0 }] },
   ],
   wifi_status: "connected",
   errors: { temperature: [], humidity: [], sensors: [], wifi: [], rotation: [] },
@@ -91,6 +93,12 @@ describe("resolveSensorReading", () => {
     expect(resolveSensorReading(device("sensor-onewire-5", "temperature"), config, actual)).toBe(
       22.4
     );
+  });
+
+  it("correlaciona internal_temp por id fijo (temperatura interna del ESP32)", () => {
+    expect(
+      resolveSensorReading(device("sensor-internal_temp-6", "temperature"), config, actual)
+    ).toBe(46.7);
   });
 
   it("devuelve null si el índice no tiene sensor en config", () => {

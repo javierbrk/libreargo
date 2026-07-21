@@ -51,6 +51,9 @@ const SENSOR_SUBTYPE_CATALOG: Record<
   hd38: {
     measurements: [{ key: "humidity", label: "Humedad", isPrimaryVisual: true }],
   },
+  internal_temp: {
+    measurements: [{ key: "temperature", label: "Temperatura", isPrimaryVisual: true }],
+  },
 };
 
 export const LABEL_MAP: Record<MeasurementKey, string> = {

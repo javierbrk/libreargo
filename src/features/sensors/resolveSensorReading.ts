@@ -29,8 +29,8 @@ const ACTUAL_TYPE_FOR_SINGLETON_CONFIG_TYPE: Record<string, string> = {
 };
 
 // Reconstruye el id que arma el firmware en getSensorID() (SensorCapacitive.h,
-// HD38Sensor.h, ModbusSoil7in1Sensor.h, ModbusTHSensor.h, SensorSCD30.h) a
-// partir de los campos de config.json, para correlacionar un sensor de
+// HD38Sensor.h, ModbusSoil7in1Sensor.h, ModbusTHSensor.h, SensorSCD30.h,
+// InternalTempSensor.h) a partir de los campos de config.json, para correlacionar un sensor de
 // /config con su entrada en /actual.sensors[] o con el tag `sensor` de
 // InfluxDB (el firmware usa el mismo id en ambos lados).
 export function reconstructActualSensorId(sensor: SensorConfig): string | null {
@@ -49,6 +49,11 @@ export function reconstructActualSensorId(sensor: SensorConfig): string | null {
   if (sensor.type === "scd30") {
     // SCD30 tiene dirección I2C fija (0x61), el firmware siempre genera este id.
     return "thc-i2c-0x61";
+  }
+  if (sensor.type === "internal_temp") {
+    // Temperatura interna del ESP32 (InternalTempSensor.h): id fijo, un solo
+    // sensor posible por hub.
+    return "sys-temp";
   }
 
   return null;
