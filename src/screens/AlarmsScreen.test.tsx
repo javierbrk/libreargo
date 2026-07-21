@@ -1,9 +1,15 @@
 import React from "react";
-import { fireEvent, render, screen } from "@testing-library/react-native";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react-native";
 import { AlarmsScreen } from "./AlarmsScreen";
 import { useHubDataStore } from "../stores/hubDataStore";
+import { useHubStore } from "../stores/hubStore";
+import { openNtfySubscriptionForHub } from "../services/notifyApi/ntfyDeepLink";
 import type { RootStackParamList } from "../navigation/types";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
+
+jest.mock("../services/notifyApi/ntfyDeepLink", () => ({
+  openNtfySubscriptionForHub: jest.fn(),
+}));
 
 type Props = NativeStackScreenProps<RootStackParamList, "Alarms">;
 
@@ -102,5 +108,73 @@ describe("AlarmsScreen (icon-first redesign)", () => {
 
     expect(screen.getByText("Temperatura")).toBeTruthy();
     expect(screen.getByText("Disparada en 38.5°C")).toBeTruthy();
+  });
+});
+
+describe("AlarmsScreen (activar notificaciones ntfy)", () => {
+  beforeEach(() => {
+    seedState();
+    jest.clearAllMocks();
+    useHubStore.setState({
+      hubs: [
+        {
+          hash: "AABBCCDDEEFF",
+          name: "moni-AABBCCDD",
+          ip: "192.168.4.1",
+          status: "conectado",
+          addedAt: "2026-03-15T08:00:00Z",
+        },
+      ],
+    });
+  });
+
+  it("no muestra el CTA si el hub no está en el store", () => {
+    useHubStore.setState({ hubs: [] });
+
+    render(<AlarmsScreen {...makeProps()} />);
+
+    expect(screen.queryByText("Activar")).toBeNull();
+  });
+
+  it("intenta el deep link y no abre el sheet si tuvo éxito", async () => {
+    (openNtfySubscriptionForHub as jest.Mock).mockResolvedValueOnce(true);
+
+    render(<AlarmsScreen {...makeProps()} />);
+    fireEvent.press(screen.getByLabelText("Activar notificaciones"));
+
+    await waitFor(() => {
+      expect(openNtfySubscriptionForHub).toHaveBeenCalled();
+    });
+    expect(screen.queryByText("Instalá ntfy")).toBeNull();
+  });
+
+  it("abre el sheet de instalación si el deep link falla", async () => {
+    (openNtfySubscriptionForHub as jest.Mock).mockResolvedValueOnce(false);
+
+    render(<AlarmsScreen {...makeProps()} />);
+    fireEvent.press(screen.getByLabelText("Activar notificaciones"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Instalá ntfy")).toBeTruthy();
+    });
+  });
+
+  it("reintenta desde el sheet y lo cierra si esta vez funciona", async () => {
+    (openNtfySubscriptionForHub as jest.Mock)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+
+    render(<AlarmsScreen {...makeProps()} />);
+    fireEvent.press(screen.getByLabelText("Activar notificaciones"));
+    await waitFor(() => {
+      expect(screen.getByText("Instalá ntfy")).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByText("Ya la instalé, reintentar"));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Instalá ntfy")).toBeNull();
+    });
+    expect(openNtfySubscriptionForHub).toHaveBeenCalledTimes(2);
   });
 });

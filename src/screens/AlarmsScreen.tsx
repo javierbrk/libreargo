@@ -3,8 +3,12 @@ import { View, FlatList, Text, TouchableOpacity, StyleSheet } from "react-native
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { COLORS } from "../constants";
 import { useHubDataStore } from "../stores/hubDataStore";
+import { useHubStore } from "../stores/hubStore";
 import { AlarmCard } from "../components/AlarmCard";
-import { IcoAlerta, IcoCheck } from "../components/icons";
+import { NtfySubscribeSheet } from "../components";
+import { IcoAlerta, IcoCampana, IcoCheck } from "../components/icons";
+import { openNtfySubscriptionForHub } from "../services/notifyApi/ntfyDeepLink";
+import { getHubNotifyTopic } from "../services/notifyApi/topic";
 import type { RootStackParamList } from "../navigation/types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Alarms">;
@@ -16,10 +20,30 @@ const TAB_LABEL: Record<AlarmTab, string> = {
   history: "Historial",
 };
 
-export function AlarmsScreen(_props: Props) {
+export function AlarmsScreen({ route }: Props) {
   const alarms = useHubDataStore((s) => s.alarms);
   const config = useHubDataStore((s) => s.config);
+  const hub = useHubStore((s) =>
+    s.hubs.find((h) => h.hash === route.params.hubHash)
+  );
   const [tab, setTab] = useState<AlarmTab>("active");
+  const [installSheetVisible, setInstallSheetVisible] = useState(false);
+
+  const handleActivateNotifications = useCallback(async () => {
+    if (!hub) return;
+    const opened = await openNtfySubscriptionForHub(hub);
+    if (!opened) {
+      setInstallSheetVisible(true);
+    }
+  }, [hub]);
+
+  const handleRetryFromSheet = useCallback(async () => {
+    if (!hub) return;
+    const opened = await openNtfySubscriptionForHub(hub);
+    if (opened) {
+      setInstallSheetVisible(false);
+    }
+  }, [hub]);
 
   const sorted = useMemo(
       () =>
@@ -121,6 +145,30 @@ export function AlarmsScreen(_props: Props) {
                     );
                   })}
                 </View>
+                {hub && (
+                    <TouchableOpacity
+                        accessibilityRole="button"
+                        accessibilityLabel="Activar notificaciones"
+                        onPress={handleActivateNotifications}
+                        style={styles.notifyCta}
+                        activeOpacity={0.85}
+                    >
+                      <View style={styles.notifyCtaIcon}>
+                        <IcoCampana size={22} color={COLORS.primary} />
+                      </View>
+                      <View style={styles.notifyCtaText}>
+                        <Text style={styles.notifyCtaTitle}>
+                          Notificaciones con la app cerrada
+                        </Text>
+                        <Text style={styles.notifyCtaSubtitle}>
+                          Se abre la app ntfy para suscribirte
+                        </Text>
+                      </View>
+                      <View style={styles.notifyCtaButton}>
+                        <Text style={styles.notifyCtaButtonText}>Activar</Text>
+                      </View>
+                    </TouchableOpacity>
+                )}
               </View>
             }
             contentContainerStyle={styles.list}
@@ -133,6 +181,12 @@ export function AlarmsScreen(_props: Props) {
                 </Text>
               </View>
             }
+        />
+        <NtfySubscribeSheet
+            visible={installSheetVisible}
+            topic={hub ? getHubNotifyTopic(hub) : ""}
+            onRetry={handleRetryFromSheet}
+            onClose={() => setInstallSheetVisible(false)}
         />
       </View>
   );
@@ -215,6 +269,47 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
   },
   tabTextActive: {
+    color: "#fff",
+  },
+  notifyCta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderRadius: 18,
+    padding: 14,
+    backgroundColor: COLORS.primarySoft,
+  },
+  notifyCtaIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: COLORS.surface,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  notifyCtaText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  notifyCtaTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: COLORS.text,
+  },
+  notifyCtaSubtitle: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
+  notifyCtaButton: {
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: COLORS.primary,
+  },
+  notifyCtaButtonText: {
+    fontSize: 14,
+    fontWeight: "700",
     color: "#fff",
   },
   empty: {

@@ -22,7 +22,7 @@ export function getNotifyBackend(): NotifyBackend {
   return configured;
 }
 
-function getBaseUrl(): string {
+export function getBaseUrl(): string {
   return (
     normalizeEnv(process.env.EXPO_PUBLIC_NOTIFY_BASE_URL) ??
     normalizeEnv(process.env.NOTIFY_BASE_URL) ??

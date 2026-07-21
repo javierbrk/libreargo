@@ -23,8 +23,20 @@ no tiene salida a internet.
 ## Instalacion para usuario final
 
 1. Instalar el APK release de LibreAgro.
-2. Instalar la app oficial de ntfy desde Google Play, F-Droid o APK.
-3. En ntfy, suscribirse al topic del hub:
+2. En la pantalla **Alertas** del hub, tocar **Activar** (banner "Notificaciones
+   con la app cerrada"). Esto intenta abrir un deep link
+   `ntfy://<host>/<topic>` (ver `src/services/notifyApi/ntfyDeepLink.ts`), que
+   la app ntfy interpreta como "suscribime a este topic si no lo estoy ya"
+   (docs.ntfy.sh/subscribe/phone/).
+3. Si ntfy no esta instalado, el deep link no tiene quien lo resuelva y
+   LibreAgro muestra una guia (`NtfySubscribeSheet`) con botones a Google
+   Play, F-Droid o GitHub Releases, y un boton "Ya la instale, reintentar"
+   que repite el paso 2.
+
+### Suscripcion manual (fallback)
+
+Si el boton no abre ntfy por algun motivo, o para debug, se puede suscribir
+a mano:
 
 ```text
 moni-<MAC_sin_dos_puntos>
@@ -105,6 +117,9 @@ prebuild y validacion especifica de Android.
 
 ## Troubleshooting
 
+- Si el boton "Activar" no abre ntfy ni muestra la guia de instalacion (caso
+  raro, ej. en un emulador sin resolver intents `ntfy://`), usar la
+  suscripcion manual de arriba como plan B.
 - Si no llega la notificacion nativa, revisar que la app ntfy tenga permiso de
   notificaciones en Android y que el topic coincida exactamente.
 - Si llega tarde, revisar ajustes de bateria/foreground service de ntfy. La app
