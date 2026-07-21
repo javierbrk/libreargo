@@ -17,6 +17,7 @@ import {
 import { parseAlarmFromNotifyMessage } from "../services/hubApi/alarmsParser";
 import { buildHubSensorDevices } from "../features/sensors/buildHubSensorDevices";
 import { useHubConfigStore } from "./hubConfigStore";
+import type { NotifyMessage } from "../services/notifyApi/NotifyApiClient";
 
 interface HubDataState {
   readonly config: HubConfig | null;
@@ -27,6 +28,10 @@ interface HubDataState {
   readonly loading: boolean;
   readonly error: string | null;
   readonly notifySince: string | null;
+  // Mensajes de ntfy que no clasifican como alarma de medición (ver
+  // alarmsParser.classifyDataType): igual llegaron al topic suscripto, así
+  // que se muestran como texto crudo en Alertas en vez de descartarse.
+  readonly notifications: readonly NotifyMessage[];
 }
 
 interface HubDataActions {
@@ -63,6 +68,7 @@ export const useHubDataStore = create<HubDataState & HubDataActions>(
     loading: false,
     error: null,
     notifySince: null,
+    notifications: [],
 
     loadHubData: async (target: string, mode: ConnectionMode = "directo") => {
       set({ loading: true, error: null });
@@ -114,9 +120,19 @@ export const useHubDataStore = create<HubDataState & HubDataActions>(
           return;
         }
 
-        const parsed = messages
-          .map(parseAlarmFromNotifyMessage)
-          .filter((alarm): alarm is Alarm => alarm !== undefined);
+        // Los mensajes que no clasifican como alarma de medición (ver
+        // classifyDataType) igual llegaron al topic suscripto: se guardan
+        // como texto crudo en vez de descartarse.
+        const parsed: Alarm[] = [];
+        const unclassified: NotifyMessage[] = [];
+        for (const msg of messages) {
+          const alarm = parseAlarmFromNotifyMessage(msg);
+          if (alarm) {
+            parsed.push(alarm);
+          } else {
+            unclassified.push(msg);
+          }
+        }
 
         const maxTime = messages.reduce(
           (max, msg) => (msg.time > max ? msg.time : max),
@@ -124,12 +140,25 @@ export const useHubDataStore = create<HubDataState & HubDataActions>(
         );
 
         set((state) => {
-          const existingIds = new Set(state.alarms.map((alarm) => alarm.id));
+          const existingAlarmIds = new Set(state.alarms.map((alarm) => alarm.id));
           // Conservamos las existentes (preserva acknowledge local) y
           // anteponemos solo las realmente nuevas.
-          const fresh = parsed.filter((alarm) => !existingIds.has(alarm.id));
+          const freshAlarms = parsed.filter((alarm) => !existingAlarmIds.has(alarm.id));
+
+          const existingNotificationIds = new Set(
+            state.notifications.map((msg) => msg.id)
+          );
+          const freshNotifications = unclassified.filter(
+            (msg) => !existingNotificationIds.has(msg.id)
+          );
+
           return {
-            alarms: fresh.length > 0 ? [...fresh, ...state.alarms] : state.alarms,
+            alarms:
+              freshAlarms.length > 0 ? [...freshAlarms, ...state.alarms] : state.alarms,
+            notifications:
+              freshNotifications.length > 0
+                ? [...freshNotifications, ...state.notifications]
+                : state.notifications,
             notifySince: maxTime > 0 ? String(maxTime) : state.notifySince,
           };
         });
@@ -147,6 +176,7 @@ export const useHubDataStore = create<HubDataState & HubDataActions>(
         devices: [],
         error: null,
         notifySince: null,
+        notifications: [],
       }),
   })
 );

@@ -6,6 +6,7 @@ import {
   getAlarms,
   getConfig,
   getRelays,
+  pollHubNotifications,
 } from "../services/hubDataService";
 
 jest.mock("../services/hubApi/backend", () => {
@@ -17,6 +18,7 @@ jest.mock("../services/hubDataService", () => ({
   getActual: jest.fn(),
   getRelays: jest.fn(),
   getAlarms: jest.fn(),
+  pollHubNotifications: jest.fn(),
 }));
 
 jest.mock("../features/sensors/buildHubSensorDevices", () => ({
@@ -225,6 +227,36 @@ describe("hubDataStore", () => {
       alarms: [],
       loading: false,
       error: null,
+    });
+  });
+
+  it("pollNotifications separa mensajes clasificables (alarma) de los que no, sin descartarlos", async () => {
+    (pollHubNotifications as jest.Mock).mockResolvedValue([
+      {
+        id: "1",
+        time: 1000,
+        event: "message",
+        topic: "moni-aabbcc",
+        message: "[T] temperature too low: 19.98",
+      },
+      {
+        id: "2",
+        time: 1001,
+        event: "message",
+        topic: "moni-aabbcc",
+        message: "hola, esto es una prueba",
+      },
+    ]);
+
+    await useHubDataStore.getState().pollNotifications("moni-aabbcc");
+
+    const state = useHubDataStore.getState();
+    expect(state.alarms).toHaveLength(1);
+    expect(state.alarms[0]).toMatchObject({ dataType: "temperature" });
+    expect(state.notifications).toHaveLength(1);
+    expect(state.notifications[0]).toMatchObject({
+      id: "2",
+      message: "hola, esto es una prueba",
     });
   });
 });

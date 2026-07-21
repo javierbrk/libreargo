@@ -32,6 +32,7 @@ function seedState(currentValue = 37.8) {
     devices: [],
     loading: false,
     error: null,
+    notifications: [],
     alarms: [
       {
         id: "alarm-001",
@@ -108,6 +109,35 @@ describe("AlarmsScreen (icon-first redesign)", () => {
 
     expect(screen.getByText("Temperatura")).toBeTruthy();
     expect(screen.getByText("Disparada en 38.5°C")).toBeTruthy();
+  });
+
+  it("no muestra el cartel verde de 'todo funciona bien' cuando no hay alarmas activas", () => {
+    useHubDataStore.setState({
+      alarms: [],
+    } as Partial<ReturnType<typeof useHubDataStore.getState>>);
+
+    render(<AlarmsScreen {...makeProps()} />);
+
+    expect(screen.queryByText("Sin alarmas")).toBeNull();
+    expect(screen.queryByText("Todo funciona bien")).toBeNull();
+  });
+
+  it("muestra el texto de una notificación ntfy que no clasifica como alarma", () => {
+    useHubDataStore.setState({
+      notifications: [
+        {
+          id: "ntfy-1",
+          time: 1784659000,
+          event: "message",
+          topic: "moni-aabbcc",
+          message: "hola, esto es una prueba",
+        },
+      ],
+    } as Partial<ReturnType<typeof useHubDataStore.getState>>);
+
+    render(<AlarmsScreen {...makeProps()} />);
+
+    expect(screen.getByText("hola, esto es una prueba")).toBeTruthy();
   });
 });
 

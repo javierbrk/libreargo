@@ -6,7 +6,7 @@ import { useHubDataStore } from "../stores/hubDataStore";
 import { useHubStore } from "../stores/hubStore";
 import { AlarmCard } from "../components/AlarmCard";
 import { NtfySubscribeSheet } from "../components";
-import { IcoAlerta, IcoCampana, IcoCheck } from "../components/icons";
+import { IcoAlerta, IcoCampana } from "../components/icons";
 import { openNtfySubscriptionForHub } from "../services/notifyApi/ntfyDeepLink";
 import { getHubNotifyTopic } from "../services/notifyApi/topic";
 import type { RootStackParamList } from "../navigation/types";
@@ -20,14 +20,27 @@ const TAB_LABEL: Record<AlarmTab, string> = {
   history: "Historial",
 };
 
+function formatNotificationTime(epochSeconds: number): string {
+  if (!Number.isFinite(epochSeconds) || epochSeconds <= 0) return "";
+  const d = new Date(epochSeconds * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export function AlarmsScreen({ route }: Props) {
   const alarms = useHubDataStore((s) => s.alarms);
   const config = useHubDataStore((s) => s.config);
+  const notifications = useHubDataStore((s) => s.notifications);
   const hub = useHubStore((s) =>
     s.hubs.find((h) => h.hash === route.params.hubHash)
   );
   const [tab, setTab] = useState<AlarmTab>("active");
   const [installSheetVisible, setInstallSheetVisible] = useState(false);
+
+  const sortedNotifications = useMemo(
+    () => [...notifications].sort((a, b) => b.time - a.time),
+    [notifications]
+  );
 
   const handleActivateNotifications = useCallback(async () => {
     if (!hub) return;
@@ -76,8 +89,6 @@ export function AlarmsScreen({ route }: Props) {
   }, []);
 
   const bannerActive = activeCount > 0;
-  const bannerColor = bannerActive ? COLORS.error : COLORS.success;
-  const BannerIcon = bannerActive ? IcoAlerta : IcoCheck;
 
   return (
       <View style={styles.container}>
@@ -93,33 +104,38 @@ export function AlarmsScreen({ route }: Props) {
             )}
             ListHeaderComponent={
               <View style={styles.headerWrap}>
-                <View
-                    accessibilityRole="summary"
-                    accessibilityLabel={
-                      bannerActive
-                          ? `${activeCount} alarmas activas necesitan tu atención`
-                          : "Sin alarmas, todo funciona bien"
-                    }
-                    style={[styles.banner, { backgroundColor: bannerColor }]}
-                >
-                  <View style={styles.bannerIcon}>
-                    <BannerIcon size={56} color="#fff" />
-                  </View>
-                  <View style={styles.bannerText}>
-                    <Text style={styles.bannerTitle} numberOfLines={1} adjustsFontSizeToFit>
-                      {bannerActive
-                          ? activeCount === 1
-                              ? "1 activa"
-                              : `${activeCount} activas`
-                          : "Sin alarmas"}
-                    </Text>
-                    <Text style={styles.bannerSubtitle}>
-                      {bannerActive
-                          ? "Necesitan tu atención"
-                          : "Todo funciona bien"}
-                    </Text>
-                  </View>
-                </View>
+                {bannerActive && (
+                    <View
+                        accessibilityRole="summary"
+                        accessibilityLabel={`${activeCount} alarmas activas necesitan tu atención`}
+                        style={[styles.banner, { backgroundColor: COLORS.error }]}
+                    >
+                      <View style={styles.bannerIcon}>
+                        <IcoAlerta size={56} color="#fff" />
+                      </View>
+                      <View style={styles.bannerText}>
+                        <Text style={styles.bannerTitle} numberOfLines={1} adjustsFontSizeToFit>
+                          {activeCount === 1 ? "1 activa" : `${activeCount} activas`}
+                        </Text>
+                        <Text style={styles.bannerSubtitle}>Necesitan tu atención</Text>
+                      </View>
+                    </View>
+                )}
+                {sortedNotifications.length > 0 && (
+                    <View style={styles.notifyList}>
+                      {sortedNotifications.map((msg) => (
+                          <View key={msg.id} style={styles.notifyRow}>
+                            <IcoCampana size={20} color={COLORS.primary} />
+                            <View style={styles.notifyRowText}>
+                              <Text style={styles.notifyRowMessage}>{msg.message}</Text>
+                              <Text style={styles.notifyRowTime}>
+                                {formatNotificationTime(msg.time)}
+                              </Text>
+                            </View>
+                          </View>
+                      ))}
+                    </View>
+                )}
                 <View style={styles.tabs}>
                   {(Object.keys(TAB_LABEL) as AlarmTab[]).map((key) => {
                     const on = tab === key;
@@ -270,6 +286,31 @@ const styles = StyleSheet.create({
   },
   tabTextActive: {
     color: "#fff",
+  },
+  notifyList: {
+    gap: 8,
+  },
+  notifyRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    borderRadius: 16,
+    padding: 14,
+    backgroundColor: COLORS.surface,
+  },
+  notifyRowText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  notifyRowMessage: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: COLORS.text,
+  },
+  notifyRowTime: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    marginTop: 2,
   },
   notifyCta: {
     flexDirection: "row",
