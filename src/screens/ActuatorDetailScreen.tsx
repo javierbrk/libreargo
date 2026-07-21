@@ -36,6 +36,7 @@ interface ChannelControlProps {
   readonly inputState: boolean;
   readonly disabled: boolean;
   readonly verifying: boolean;
+  readonly controlsEnabled: boolean;
   readonly onToggle: () => void;
 }
 
@@ -45,6 +46,7 @@ function ChannelControl({
   inputState,
   disabled,
   verifying,
+  controlsEnabled,
   onToggle,
 }: ChannelControlProps) {
   const hasDiscrepancy = !verifying && commandState !== inputState;
@@ -82,18 +84,27 @@ function ChannelControl({
         </View>
       )}
 
-      <BigButton
-        label={on ? "Apagar" : "Encender"}
-        color={on ? COLORS.error : COLORS.primary}
-        onPress={onToggle}
-        disabled={disabled}
-        accessibilityLabel={
-          on ? `Apagar canal ${channel + 1}` : `Encender canal ${channel + 1}`
-        }
-      />
-      {disabled && !verifying && (
-        <Text style={styles.disabledHint}>
-          Esperá unos segundos antes de volver a tocar.
+      {controlsEnabled ? (
+        <>
+          <BigButton
+            label={on ? "Apagar" : "Encender"}
+            color={on ? COLORS.error : COLORS.primary}
+            onPress={onToggle}
+            disabled={disabled}
+            accessibilityLabel={
+              on ? `Apagar canal ${channel + 1}` : `Encender canal ${channel + 1}`
+            }
+          />
+          {disabled && !verifying && (
+            <Text style={styles.disabledHint}>
+              Esperá unos segundos antes de volver a tocar.
+            </Text>
+          )}
+        </>
+      ) : (
+        <Text style={styles.onlineOnlyHint}>
+          Los actuadores solo se controlan en modo Directo, conectado al AP
+          del hub.
         </Text>
       )}
     </Card>
@@ -109,6 +120,7 @@ export function ActuatorDetailScreen({ route, navigation }: Props) {
     s.hubs.find((h) => h.hash === route.params.hubHash)
   );
   const connectionMode = useHubStore((s) => s.connectionMode);
+  const controlsEnabled = connectionMode === "directo";
   const zoneAssignments = useZoneStore((s) => s.assignments);
   const knownZones = useZoneStore((s) => s.knownZones);
   const setDeviceZones = useZoneStore((s) => s.setDeviceZones);
@@ -280,6 +292,7 @@ export function ActuatorDetailScreen({ route, navigation }: Props) {
         inputState={relay.input_state[0]}
         disabled={throttled || verifying[0] || !relay.active}
         verifying={verifying[0]}
+        controlsEnabled={controlsEnabled}
         onToggle={() => handleToggle(0)}
       />
       <ChannelControl
@@ -288,6 +301,7 @@ export function ActuatorDetailScreen({ route, navigation }: Props) {
         inputState={relay.input_state[1]}
         disabled={throttled || verifying[1] || !relay.active}
         verifying={verifying[1]}
+        controlsEnabled={controlsEnabled}
         onToggle={() => handleToggle(1)}
       />
 
@@ -414,5 +428,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.textMuted,
     textAlign: "center",
+  },
+  onlineOnlyHint: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    textAlign: "center",
+    lineHeight: 20,
   },
 });
