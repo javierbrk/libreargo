@@ -18,6 +18,7 @@ import { parseAlarmFromNotifyMessage } from "../services/hubApi/alarmsParser";
 import { buildHubSensorDevices } from "../features/sensors/buildHubSensorDevices";
 import { useHubConfigStore } from "./hubConfigStore";
 import type { NotifyMessage } from "../services/notifyApi/NotifyApiClient";
+import { scheduleLocalNotification } from "../services/localNotifications";
 
 interface HubDataState {
   readonly config: HubConfig | null;
@@ -139,29 +140,42 @@ export const useHubDataStore = create<HubDataState & HubDataActions>(
           0
         );
 
-        set((state) => {
-          const existingAlarmIds = new Set(state.alarms.map((alarm) => alarm.id));
-          // Conservamos las existentes (preserva acknowledge local) y
-          // anteponemos solo las realmente nuevas.
-          const freshAlarms = parsed.filter((alarm) => !existingAlarmIds.has(alarm.id));
+        const existingAlarmIds = new Set(
+          useHubDataStore.getState().alarms.map((alarm) => alarm.id)
+        );
+        const freshAlarms = parsed.filter((alarm) => !existingAlarmIds.has(alarm.id));
 
-          const existingNotificationIds = new Set(
-            state.notifications.map((msg) => msg.id)
-          );
-          const freshNotifications = unclassified.filter(
-            (msg) => !existingNotificationIds.has(msg.id)
-          );
+        const existingNotificationIds = new Set(
+          useHubDataStore.getState().notifications.map((msg) => msg.id)
+        );
+        const freshNotifications = unclassified.filter(
+          (msg) => !existingNotificationIds.has(msg.id)
+        );
 
-          return {
-            alarms:
-              freshAlarms.length > 0 ? [...freshAlarms, ...state.alarms] : state.alarms,
-            notifications:
-              freshNotifications.length > 0
-                ? [...freshNotifications, ...state.notifications]
-                : state.notifications,
-            notifySince: maxTime > 0 ? String(maxTime) : state.notifySince,
-          };
-        });
+        set((state) => ({
+          alarms:
+            freshAlarms.length > 0 ? [...freshAlarms, ...state.alarms] : state.alarms,
+          notifications:
+            freshNotifications.length > 0
+              ? [...freshNotifications, ...state.notifications]
+              : state.notifications,
+          notifySince: maxTime > 0 ? String(maxTime) : state.notifySince,
+        }));
+
+        // Disparar notificación local del SO por cada alarma nueva.
+        for (const alarm of freshAlarms) {
+          void scheduleLocalNotification(
+            "⚠️ Alarma del hub",
+            alarm.message
+          );
+        }
+        // Disparar notificación local del SO por cada mensaje ntfy no clasificado.
+        for (const msg of freshNotifications) {
+          void scheduleLocalNotification(
+            msg.title ?? "Notificación del hub",
+            msg.message
+          );
+        }
       } catch {
         // ntfy es complementario; ignoramos errores de red.
       }
