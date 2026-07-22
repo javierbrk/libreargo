@@ -135,6 +135,13 @@ export function MainStack() {
           headerTintColor: COLORS.surface,
           headerTitleStyle: { fontWeight: "bold" },
           headerLeft: hamburgerButton,
+          headerRight: () =>
+            renderAlarmsButton(() => {
+              const selected = activeHub ?? useHubStore.getState().hubs[0];
+              if (selected) {
+                navigate("Alarms", { hubHash: selected.hash });
+              }
+            }),
         }}
       >
         <Stack.Screen

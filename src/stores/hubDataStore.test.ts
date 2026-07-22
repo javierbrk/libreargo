@@ -19,6 +19,9 @@ jest.mock("../services/hubDataService", () => ({
   getActual: jest.fn(),
   getRelays: jest.fn(),
   getAlarms: jest.fn(),
+  registerPushEndpointWithHub: jest.fn().mockResolvedValue(true),
+  getSubscribersFromHub: jest.fn().mockResolvedValue([]),
+  autoSyncPushEndpointWithHub: jest.fn().mockResolvedValue(true),
 }));
 
 jest.mock("../features/sensors/buildHubSensorDevices", () => ({

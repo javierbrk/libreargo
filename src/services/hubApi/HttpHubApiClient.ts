@@ -1,5 +1,5 @@
 import type { Alarm } from "../../types";
-import type { HubApiClient } from "./HubApiClient";
+import type { HubApiClient, RegisterEndpointResult } from "./HubApiClient";
 import {
   mapConfigurationResponse,
   mapRelayListResponse,
@@ -24,6 +24,7 @@ type HubResponse = {
 };
 
 const PING_TIMEOUT_MS = 3000;
+const DEFAULT_TIMEOUT_MS = 5000;
 
 export function createHttpHubApiClient(): HubApiClient {
   return {
@@ -72,6 +73,68 @@ export function createHttpHubApiClient(): HubApiClient {
         return response.ok;
       } catch {
         return false;
+      }
+    },
+    async registerPushEndpoint(
+      hubIp: string,
+      endpointUrl: string,
+      instance: string
+    ): Promise<RegisterEndpointResult> {
+      const fullUrl = `http://${hubIp}/api/notify/subscribe`;
+      const requestBody = JSON.stringify({ endpoint: endpointUrl, instance });
+      try {
+        const response = await request(
+          hubIp,
+          "/api/notify/subscribe",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: requestBody,
+          },
+          DEFAULT_TIMEOUT_MS
+        );
+        let responseText = "";
+        try {
+          responseText = await response.text();
+        } catch {
+          responseText = response.ok ? "OK" : "Error";
+        }
+        return {
+          ok: response.ok,
+          url: fullUrl,
+          requestBody,
+          status: response.status,
+          responseText,
+        };
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : "Network error / Timeout";
+        return {
+          ok: false,
+          url: fullUrl,
+          requestBody,
+          responseText: errMsg,
+        };
+      }
+    },
+    async getSubscribers(hubIp: string): Promise<readonly string[]> {
+      try {
+        const response = await request(
+          hubIp,
+          "/api/notify/subscribers",
+          { method: "GET" },
+          DEFAULT_TIMEOUT_MS
+        );
+        const data = (await readJsonBody(response)) as {
+          subscribers?: Array<{ endpoint?: string } | string>;
+        };
+        if (Array.isArray(data.subscribers)) {
+          return data.subscribers
+            .map((item) => (typeof item === "string" ? item : item.endpoint))
+            .filter((e): e is string => typeof e === "string" && e.trim() !== "");
+        }
+        return [];
+      } catch {
+        return [];
       }
     },
   };

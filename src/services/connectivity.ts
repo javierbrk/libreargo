@@ -3,21 +3,16 @@ import type { ConnectionMode, Hub } from "../types";
 
 /**
  * Resuelve el "target" que se pasa a los servicios del hub según el modo de
- * conexión, siguiendo lo confirmado por LibreAgro:
+ * conexión:
  *
- * - **Directo**: la IP del hub es FIJA (`192.168.4.1`, AP del hub). No se
- *   descubre ni se persiste; siempre es la misma mientras se esté conectado
- *   directo. Por eso ignoramos `hub.ip` y usamos la constante.
+ * - **Directo**: Usa `hub.ip` si está configurada (ej. `192.168.18.205`),
+ *   o fallback a `DIRECT_MODE_IP` (`192.168.4.1`, AP del hub).
  *
- * - **Online**: el acceso NO es contra la IP del hub sino contra el backend,
- *   que identifica cada hub por su `hash`. No hay descubrimiento de IP. Hasta
- *   que el backend exista, el cliente mock ignora este valor (la app sigue
- *   funcionando con datos mock).
- *
- * El valor devuelto es opaco para las pantallas: solo lo reenvían a la capa de
- * servicio. La interpretación (IP directa vs. ruteo por hash en el backend)
- * vive en el cliente HTTP correspondiente.
+ * - **Online**: Usa `hub.hash` para ruteo por backend.
  */
 export function resolveHubTarget(mode: ConnectionMode, hub: Hub): string {
-  return mode === "directo" ? DIRECT_MODE_IP : hub.hash;
+  if (mode === "directo") {
+    return hub.ip && hub.ip.trim() !== "" ? hub.ip : DIRECT_MODE_IP;
+  }
+  return hub.hash;
 }

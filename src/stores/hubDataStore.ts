@@ -12,12 +12,17 @@ import {
   getActual,
   getRelays,
   getAlarms,
+  registerPushEndpointWithHub,
+  getSubscribersFromHub,
+  autoSyncPushEndpointWithHub,
 } from "../services/hubDataService";
 import { buildHubSensorDevices } from "../features/sensors/buildHubSensorDevices";
 import { useHubConfigStore } from "./hubConfigStore";
+import { useHubStore } from "./hubStore";
 import { getNotifyApiClient } from "../services/notifyApi/backend";
 import { getHubNotifyTopicFromHash } from "../services/notifyApi/topic";
 import { parseAlarmFromNotifyMessage } from "../services/hubApi/alarmsParser";
+import { getEndpointInfo, markEndpointSynced } from "../services/unifiedPushService";
 
 interface HubDataState {
   readonly config: HubConfig | null;
@@ -120,6 +125,19 @@ export const useHubDataStore = create<HubDataState & HubDataActions>(
 
         const devices = buildDevices(config, relays);
         set({ config, actual, relays, alarms, devices, loading: false });
+
+        // En modo Directo, sincronizar automáticamente el endpoint de la app con el ESP32 si no está suscripto
+        if (mode === "directo" && config.hash) {
+          const hubs = useHubStore.getState().hubs;
+          const currentHub = hubs.find((h) => h.hash === config.hash) ?? {
+            hash: config.hash,
+            name: config.incubator_name,
+            ip: target,
+            status: "conectado" as const,
+            addedAt: new Date().toISOString(),
+          };
+          void autoSyncPushEndpointWithHub(currentHub, "directo");
+        }
       } catch (e: unknown) {
         const detail = e instanceof Error && e.message ? ` (${e.message})` : "";
         set({

@@ -3,7 +3,7 @@ import { mockAlarms } from "../../mocks/alarms";
 import { mockConfig } from "../../mocks/config";
 import { mockRelays } from "../../mocks/relays";
 import type { Alarm, HubConfig, RelayState, SensorData } from "../../types";
-import type { HubApiClient } from "./HubApiClient";
+import type { HubApiClient, RegisterEndpointResult } from "./HubApiClient";
 import { parseAlarmsFromSensorData } from "./alarmsParser";
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -76,5 +76,28 @@ export function createMockHubApiClient(): HubApiClient {
       await delay(80);
       return true;
     },
+    async registerPushEndpoint(
+      hubIp: string,
+      endpointUrl: string,
+      instance: string
+    ): Promise<RegisterEndpointResult> {
+      await delay(80);
+      mockSubscribers.add(endpointUrl);
+      const fullUrl = `http://${hubIp}/api/notify/subscribe`;
+      const requestBody = JSON.stringify({ endpoint: endpointUrl, instance });
+      return {
+        ok: true,
+        url: fullUrl,
+        requestBody,
+        status: 200,
+        responseText: JSON.stringify({ status: "ok", total_subscribers: mockSubscribers.size }),
+      };
+    },
+    async getSubscribers(): Promise<readonly string[]> {
+      await delay(80);
+      return Array.from(mockSubscribers);
+    },
   };
 }
+
+const mockSubscribers = new Set<string>();

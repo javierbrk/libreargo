@@ -6,12 +6,11 @@
  *
  * Responsabilidades:
  * - Verificar que ntfy está disponible como Distribuidor.
- * - Registrar cada hub como una instancia separada (instance = topic ntfy).
+ * - Registrar cada hub como una instancia separada (instance = topic ntfy) con VAPID válido.
  * - Suscribir callbacks para cuando llegan mensajes mientras la app está abierta.
+ * - Almacenar las URLs de endpoint de UnifiedPush generadas por el distribuidor.
+ * - Detectar cambios en las URLs de endpoint para sincronizar con el ESP en modo Directo.
  * - Exponer herramientas de prueba end-to-end.
- *
- * La notificación nativa cuando la app está CERRADA la construye el
- * NtfyPushPayloadRenderer (Kotlin) sin pasar por el puente JS.
  */
 
 import { Platform } from "react-native";
@@ -52,8 +51,44 @@ if (Platform.OS === "android") {
 /** Package name del Distribuidor ntfy (app oficial de ntfy.sh). */
 export const NTFY_DISTRIBUTOR_PACKAGE = "io.heckel.ntfy";
 
-/** Placeholder VAPID (ntfy lo ignora pero la API de UP lo requiere). */
-const NTFY_VAPID_PLACEHOLDER = "";
+/** VAPID Public Key para suscripciones WebPush / UnifiedPush. */
+export const LIBREAGRO_VAPID_PUBLIC_KEY =
+  "BKuOL1EnGg0iPE9Ma_Whv-Q2qgRr4a1VqUL1vzCFAdd6XVDjHnE0UCExQBKA-LWxr0F3hiOJz7tVWASWRr9YnP0";
+
+export interface EndpointRecord {
+  currentUrl: string;
+  previousUrl: string | null;
+  hasChanged: boolean;
+  syncedWithHub: boolean;
+}
+
+/** Mapa de instancias (topic ntfy) -> Registro de endpoint */
+const endpointRegistry = new Map<string, EndpointRecord>();
+type EndpointChangeCallback = (instance: string, record: EndpointRecord) => void;
+const endpointListeners = new Set<EndpointChangeCallback>();
+
+export function getRegisteredEndpoint(instance: string): string | undefined {
+  return endpointRegistry.get(instance)?.currentUrl;
+}
+
+export function getEndpointInfo(instance: string): EndpointRecord | undefined {
+  return endpointRegistry.get(instance);
+}
+
+export function markEndpointSynced(instance: string): void {
+  const existing = endpointRegistry.get(instance);
+  if (existing) {
+    existing.hasChanged = false;
+    existing.syncedWithHub = true;
+  }
+}
+
+export function onEndpointChange(cb: EndpointChangeCallback): () => void {
+  endpointListeners.add(cb);
+  return () => {
+    endpointListeners.delete(cb);
+  };
+}
 
 export type UnifiedPushStatus =
   | "not_android"       // plataforma no soportada
@@ -101,14 +136,12 @@ export async function initUnifiedPush(hubs: readonly Hub[]): Promise<boolean> {
     return false;
   }
 
-  // Guardar ntfy como distribuidor principal
   ExpoUnifiedPush.saveDistributor(NTFY_DISTRIBUTOR_PACKAGE);
 
-  // Registrar cada hub como una instancia UnifiedPush (topic de ntfy)
   for (const hub of hubs) {
     const topic = getHubNotifyTopic(hub);
     try {
-      await ExpoUnifiedPush.registerDevice(NTFY_VAPID_PLACEHOLDER, topic);
+      await ExpoUnifiedPush.registerDevice(LIBREAGRO_VAPID_PUBLIC_KEY, topic);
     } catch {
       // Best effort
     }
@@ -120,8 +153,8 @@ export async function initUnifiedPush(hubs: readonly Hub[]): Promise<boolean> {
 export type MessageCallback = (instance: string, rawMessage: string) => void;
 
 /**
- * Suscribe un callback que se llama cuando llega un mensaje push
- * mientras la app está ABIERTA.
+ * Suscribe callbacks para eventos del distribuidor.
+ * Registra endpoints recibidos y notifica si el endpoint cambió.
  */
 export function subscribeToMessages(onMessage: MessageCallback): () => void {
   if (!subscribeDistributorMessages) {
@@ -129,7 +162,26 @@ export function subscribeToMessages(onMessage: MessageCallback): () => void {
   }
 
   const unsub = subscribeDistributorMessages((callbackData: CallbackData) => {
-    if (callbackData.action === "message") {
+    if (callbackData.action === "registered" && callbackData.data) {
+      const { url, instance } = callbackData.data;
+      if (url && instance) {
+        const prev = endpointRegistry.get(instance);
+        const previousUrl = prev ? prev.currentUrl : null;
+        const hasChanged = previousUrl !== null && previousUrl !== url;
+
+        const record: EndpointRecord = {
+          currentUrl: url,
+          previousUrl,
+          hasChanged,
+          syncedWithHub: !hasChanged && (prev?.syncedWithHub ?? false),
+        };
+
+        endpointRegistry.set(instance, record);
+        endpointListeners.forEach((listener) => listener(instance, record));
+      }
+    }
+
+    if (callbackData.action === "message" && callbackData.data) {
       const { instance, message } = callbackData.data;
       const rawMessage =
         typeof message === "string"
@@ -142,20 +194,61 @@ export function subscribeToMessages(onMessage: MessageCallback): () => void {
   return unsub;
 }
 
+export interface TestPushResult {
+  readonly ok: boolean;
+  readonly targetUrl: string;
+  readonly isUnifiedPushEndpoint: boolean;
+}
+
 /**
- * Publica una alarma de prueba directamente al topic de ntfy.sh vía HTTP POST.
- * Esto dispara el flujo real: ntfy.sh -> ntfy app -> UnifiedPush -> LibreAgro.
+ * Publica una alarma de prueba al topic o endpoint de ntfy.
  */
 export async function sendTestPushNotification(
   topic: string,
   messageText = "[T] temperature too high: 39.5 (Prueba Push LibreAgro)"
+): Promise<TestPushResult> {
+  try {
+    const endpointUrl = getRegisteredEndpoint(topic);
+    const isUnifiedPushEndpoint = Boolean(endpointUrl);
+    const url = endpointUrl
+      ? endpointUrl
+      : `${getBaseUrl().replace(/\/+$/, "")}/${encodeURIComponent(topic)}`;
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Title": "⚠️ Prueba de Alarma LibreAgro",
+        "Priority": "high",
+        "Tags": "warning",
+      },
+      body: messageText,
+    });
+
+    return {
+      ok: response.ok,
+      targetUrl: url,
+      isUnifiedPushEndpoint,
+    };
+  } catch {
+    return {
+      ok: false,
+      targetUrl: "",
+      isUnifiedPushEndpoint: false,
+    };
+  }
+}
+
+/** Publica directamente al topic del hub (ntfy.sh/moni-XXXX). */
+export async function sendTestTopicNotification(
+  topic: string,
+  messageText = "[T] temperature too high: 39.5 (Prueba Topic Hub)"
 ): Promise<boolean> {
   try {
     const url = `${getBaseUrl().replace(/\/+$/, "")}/${encodeURIComponent(topic)}`;
     const response = await fetch(url, {
       method: "POST",
       headers: {
-        "Title": "⚠️ Prueba de Alarma LibreAgro",
+        "Title": "⚠️ Prueba Topic Hub",
         "Priority": "high",
         "Tags": "warning",
       },
@@ -168,7 +261,7 @@ export async function sendTestPushNotification(
 }
 
 /**
- * Abre el selector de distribuidor del sistema si se desea cambiar.
+ * Abre el selector de distribuidor del sistema.
  */
 export function openDistributorSelector(): void {
   if (Platform.OS !== "android" || !ExpoUnifiedPush) {

@@ -12,20 +12,27 @@ import { getHubNotifyTopic } from "../services/notifyApi/topic";
 import type { RootStackParamList } from "../navigation/types";
 import {
   checkUnifiedPushStatus,
+  getEndpointInfo,
+  getRegisteredEndpoint,
   initUnifiedPush,
+  markEndpointSynced,
   sendTestPushNotification,
+  sendTestTopicNotification,
   type UnifiedPushStatus,
 } from "../services/unifiedPushService";
 import { scheduleLocalNotification } from "../services/localNotifications";
 import { parseAlarmFromPushText } from "../services/hubApi/alarmsParser";
+import { getSubscribersFromHub, registerPushEndpointWithHub } from "../services/hubDataService";
+import { resolveHubTarget } from "../services/connectivity";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Alarms">;
 
-type AlarmTab = "active" | "history";
+type AlarmTab = "active" | "history" | "diagnostic";
 
 const TAB_LABEL: Record<AlarmTab, string> = {
   active: "Activas",
   history: "Historial",
+  diagnostic: "Diagnóstico",
 };
 
 export function AlarmsScreen({ route }: Props) {
@@ -35,6 +42,7 @@ export function AlarmsScreen({ route }: Props) {
     s.hubs.find((h) => h.hash === route.params.hubHash)
   );
   const hubs = useHubStore((s) => s.hubs);
+  const connectionMode = useHubStore((s) => s.connectionMode);
 
   const [tab, setTab] = useState<AlarmTab>("active");
   const [installSheetVisible, setInstallSheetVisible] = useState(false);
@@ -42,9 +50,33 @@ export function AlarmsScreen({ route }: Props) {
   const [testSending, setTestSending] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
 
+  // Estado de suscriptores devueltos por el ESP32 (GET /api/notify/subscribers)
+  const [espSubscribers, setEspSubscribers] = useState<readonly string[] | null>(null);
+  const [loadingSubscribers, setLoadingSubscribers] = useState(false);
+
   useEffect(() => {
     setUpStatus(checkUnifiedPushStatus());
   }, []);
+
+  const handleFetchEspSubscribers = useCallback(async () => {
+    if (!hub) return;
+    setLoadingSubscribers(true);
+    try {
+      const target = resolveHubTarget(connectionMode, hub);
+      const subs = await getSubscribersFromHub(target, connectionMode);
+      setEspSubscribers(subs);
+    } catch {
+      setEspSubscribers([]);
+    } finally {
+      setLoadingSubscribers(false);
+    }
+  }, [hub, connectionMode]);
+
+  useEffect(() => {
+    if (tab === "diagnostic" && hub) {
+      void handleFetchEspSubscribers();
+    }
+  }, [tab, hub, handleFetchEspSubscribers]);
 
   const handleActivateNotifications = useCallback(async () => {
     if (!hub) return;
@@ -71,15 +103,33 @@ export function AlarmsScreen({ route }: Props) {
     setTestSending(true);
     setTestResult(null);
     const topic = getHubNotifyTopic(hub);
-    const ok = await sendTestPushNotification(
+    const res = await sendTestPushNotification(
       topic,
       "[T] temperature too high: 39.8 min:18 max:38 (Test Push LibreAgro)"
     );
     setTestSending(false);
-    if (ok) {
-      setTestResult("✅ Push de prueba enviado a ntfy.sh. Revisa la barra de estado.");
+    if (res.ok) {
+      const modeText = res.isUnifiedPushEndpoint ? "Endpoint UP (Celular)" : "Topic ntfy.sh";
+      setTestResult(`✅ Push enviado vía ${modeText}.\n${res.targetUrl}`);
     } else {
-      setTestResult("❌ Error al enviar push de prueba a ntfy.sh.");
+      setTestResult("❌ Error al enviar push de prueba.");
+    }
+  }, [hub]);
+
+  const handleSendTestTopic = useCallback(async () => {
+    if (!hub) return;
+    setTestSending(true);
+    setTestResult(null);
+    const topic = getHubNotifyTopic(hub);
+    const ok = await sendTestTopicNotification(
+      topic,
+      "[T] temperature too high: 39.8 (Test Topic Hub)"
+    );
+    setTestSending(false);
+    if (ok) {
+      setTestResult(`✅ Enviado a https://ntfy.sh/${topic}.\nntfy app recibirá el mensaje.`);
+    } else {
+      setTestResult("❌ Error al publicar en topic del hub.");
     }
   }, [hub]);
 
@@ -96,6 +146,42 @@ export function AlarmsScreen({ route }: Props) {
     setTestResult("✅ Alarma agregada y notificación local emitida.");
   }, [hub]);
 
+  const handleRegisterWithEsp = useCallback(async () => {
+    if (!hub) return;
+    const myEp = getRegisteredEndpoint(topic);
+    if (!myEp) {
+      setTestResult("⚠️ Esperando que ntfy genere el endpoint del celular...");
+      return;
+    }
+    setTestSending(true);
+    setTestResult(null);
+    try {
+      const target = resolveHubTarget(connectionMode, hub);
+      const res = await registerPushEndpointWithHub(target, myEp, topic, connectionMode);
+      
+      const verboseReport = [
+        res.ok
+          ? `✅ HTTP ${res.status ?? 200} OK — Suscripto en ESP32`
+          : `❌ HTTP ${res.status ?? "ERROR"} — Falló la suscripción`,
+        `📍 URL: ${res.url}`,
+        `📦 Body: ${res.requestBody}`,
+        `💬 Respuesta ESP32: ${res.responseText ?? "(sin respuesta)"}`,
+      ].join("\n");
+
+      setTestResult(verboseReport);
+
+      if (res.ok) {
+        markEndpointSynced(topic);
+        void handleFetchEspSubscribers();
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Error desconocido";
+      setTestResult(`❌ Error de comunicación:\n${msg}`);
+    } finally {
+      setTestSending(false);
+    }
+  }, [hub, topic, connectionMode, handleFetchEspSubscribers]);
+
   const sorted = useMemo(
     () =>
       [...alarms].sort(
@@ -110,11 +196,13 @@ export function AlarmsScreen({ route }: Props) {
     [sorted]
   );
 
-  const visible = useMemo(
+  const visibleAlarms = useMemo(
     () =>
       tab === "active"
         ? sorted.filter((a) => a.status === "active")
-        : sorted.filter((a) => a.status !== "active"),
+        : tab === "history"
+          ? sorted.filter((a) => a.status !== "active")
+          : [],
     [sorted, tab]
   );
 
@@ -128,11 +216,16 @@ export function AlarmsScreen({ route }: Props) {
 
   const bannerActive = activeCount > 0;
   const topic = hub ? getHubNotifyTopic(hub) : "";
+  const myEndpoint = getRegisteredEndpoint(topic);
+  const endpointInfo = getEndpointInfo(topic);
+  const isMyPhoneSubscribed = Boolean(
+    myEndpoint && espSubscribers?.includes(myEndpoint)
+  );
 
   return (
     <View style={styles.container}>
       <FlatList
-        data={visible}
+        data={tab === "diagnostic" ? [] : visibleAlarms}
         keyExtractor={(alarm) => alarm.id}
         renderItem={({ item }) => (
           <AlarmCard
@@ -161,6 +254,7 @@ export function AlarmsScreen({ route }: Props) {
               </View>
             )}
 
+            {/* Pestañas: Activas, Historial, Diagnóstico */}
             <View style={styles.tabs}>
               {(Object.keys(TAB_LABEL) as AlarmTab[]).map((key) => {
                 const on = tab === key;
@@ -187,47 +281,178 @@ export function AlarmsScreen({ route }: Props) {
               })}
             </View>
 
-            {/* Tarjeta de vinculación con ntfy / UnifiedPush */}
-            {hub && (
-              <View style={styles.pushCard}>
-                <View style={styles.pushHeader}>
+            {/* CTA de activación siempre visible cuando el hub existe */}
+            {hub && tab !== "diagnostic" && (
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Activar notificaciones"
+                onPress={handleActivateNotifications}
+                style={styles.notifyCta}
+                activeOpacity={0.85}
+              >
+                <View style={styles.notifyCtaIcon}>
                   <IcoCampana size={22} color={COLORS.primary} />
-                  <View style={styles.pushHeaderText}>
-                    <Text style={styles.pushTitle}>Notificaciones Push (ntfy + UnifiedPush)</Text>
-                    <Text style={styles.pushSubtitle}>
-                      Topic: <Text style={styles.codeText}>{topic}</Text>
+                </View>
+                <View style={styles.notifyCtaText}>
+                  <Text style={styles.notifyCtaTitle}>
+                    Notificaciones con la app cerrada
+                  </Text>
+                  <Text style={styles.notifyCtaSubtitle}>
+                    Vincular con la app ntfy
+                  </Text>
+                </View>
+                <View style={styles.notifyCtaButton}>
+                  <Text style={styles.notifyCtaButtonText}>Activar</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+
+            {/* PANEL DE DIAGNÓSTICO */}
+            {tab === "diagnostic" && hub && (
+              <View style={styles.diagnosticWrap}>
+                {/* 1. Tarjeta Estado Distribuidor ntfy */}
+                <View style={styles.pushCard}>
+                  <View style={styles.pushHeader}>
+                    <IcoCampana size={22} color={COLORS.primary} />
+                    <View style={styles.pushHeaderText}>
+                      <Text style={styles.pushTitle}>Notificaciones Push (ntfy + UnifiedPush)</Text>
+                      <Text style={styles.pushSubtitle}>
+                        Topic: <Text style={styles.codeText}>{topic}</Text>
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.statusRow}>
+                    <Text style={styles.statusLabel}>Estado del distribuidor:</Text>
+                    <Text style={styles.statusValue}>
+                      {upStatus === "ntfy_ready"
+                        ? "🟢 ntfy activo"
+                        : upStatus === "ntfy_missing"
+                          ? "🔴 ntfy no instalado"
+                          : upStatus === "no_distributor"
+                            ? "🟡 Sin configurar"
+                            : "⚪ No soportado"}
                     </Text>
                   </View>
+
+                  {Boolean(myEndpoint) && (
+                    <View style={styles.statusRow}>
+                      <Text style={styles.statusLabel}>Endpoint UP:</Text>
+                      <Text style={[styles.statusValue, styles.codeText]} numberOfLines={1}>
+                        {myEndpoint}
+                      </Text>
+                    </View>
+                  )}
+
+                  {Boolean(endpointInfo?.hasChanged) && (
+                    <View style={styles.changeAlert}>
+                      <Text style={styles.changeAlertTitle}>⚠️ El Endpoint cambió</Text>
+                      <Text style={styles.changeAlertText}>
+                        Se generó un nuevo endpoint de notificaciones. Conéctate en modo Directo al hub para actualizar su registro.
+                      </Text>
+                    </View>
+                  )}
+
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel="Activar notificaciones"
+                    onPress={handleActivateNotifications}
+                    style={styles.actionBtn}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.actionBtnText}>
+                      {upStatus === "ntfy_ready" ? "Re-vincular ntfy" : "Activar"}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
 
-                <View style={styles.statusRow}>
-                  <Text style={styles.statusLabel}>Estado del distribuidor:</Text>
-                  <Text style={styles.statusValue}>
-                    {upStatus === "ntfy_ready"
-                      ? "🟢 ntfy activo"
-                      : upStatus === "ntfy_missing"
-                        ? "🔴 ntfy no instalado"
-                        : upStatus === "no_distributor"
-                          ? "🟡 Sin configurar"
-                          : "⚪ No soportado"}
-                  </Text>
+                {/* 2. Tarjeta Suscriptores Registrados en el ESP32 (GET /api/notify/subscribers) */}
+                <View style={styles.pushCard}>
+                  <View style={styles.pushHeader}>
+                    <Text style={styles.pushTitle}>📡 Suscriptores Registrados en el ESP32</Text>
+                  </View>
+
+                  <View style={styles.statusRow}>
+                    <Text style={styles.statusLabel}>Modo de conexión:</Text>
+                    <Text style={styles.statusValue}>
+                      {connectionMode === "directo" ? "Directo (192.168.4.1)" : "Online (Backend)"}
+                    </Text>
+                  </View>
+
+                  {Boolean(myEndpoint) && (
+                    <View style={styles.statusRow}>
+                      <Text style={styles.statusLabel}>Estado de tu celular:</Text>
+                      <Text style={styles.statusValue}>
+                        {isMyPhoneSubscribed
+                          ? "🟢 Registrado en ESP32"
+                          : "🟡 Pendiente de registro"}
+                      </Text>
+                    </View>
+                  )}
+
+                  <TouchableOpacity
+                    onPress={handleFetchEspSubscribers}
+                    disabled={loadingSubscribers}
+                    style={[styles.testBtn, styles.testBtnSecondary, { marginVertical: 4 }]}
+                  >
+                    {loadingSubscribers ? (
+                      <ActivityIndicator size="small" color={COLORS.textSecondary} />
+                    ) : (
+                      <Text style={styles.testBtnSecondaryText}>🔄 Consultar suscriptores (GET /api/notify/subscribers)</Text>
+                    )}
+                  </TouchableOpacity>
+
+                  {Boolean(myEndpoint) && (
+                    <TouchableOpacity
+                      onPress={handleRegisterWithEsp}
+                      disabled={testSending}
+                      style={[styles.actionBtn, { marginVertical: 4, backgroundColor: COLORS.primary }]}
+                      activeOpacity={0.85}
+                    >
+                      {testSending ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <Text style={styles.actionBtnText}>
+                          ⚡ Registrar celular en ESP32 (POST /api/notify/subscribe)
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  )}
+
+                  {espSubscribers !== null && (
+                    <View style={styles.subscribersList}>
+                      <Text style={styles.subscribersListTitle}>
+                        Total suscriptores en ESP32: {espSubscribers.length}
+                      </Text>
+
+                      {espSubscribers.length === 0 ? (
+                        <Text style={styles.subscribersEmptyText}>
+                          Sin suscriptores guardados en el ESP32.
+                        </Text>
+                      ) : (
+                        espSubscribers.map((sub, idx) => {
+                          const isMine = sub === myEndpoint;
+                          return (
+                            <View key={`${sub}-${idx}`} style={styles.subscriberRow}>
+                              <Text style={styles.subscriberText} numberOfLines={1}>
+                                {sub}
+                              </Text>
+                              {isMine && (
+                                <View style={styles.mineBadge}>
+                                  <Text style={styles.mineBadgeText}>Este celular</Text>
+                                </View>
+                              )}
+                            </View>
+                          );
+                        })
+                      )}
+                    </View>
+                  )}
                 </View>
 
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel="Activar notificaciones"
-                  onPress={handleActivateNotifications}
-                  style={styles.actionBtn}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.actionBtnText}>
-                    {upStatus === "ntfy_ready" ? "Re-vincular ntfy" : "Activar"}
-                  </Text>
-                </TouchableOpacity>
-
-                {/* Herramientas de verificación */}
-                <View style={styles.testSection}>
-                  <Text style={styles.testTitle}>🛠️ Diagnóstico y Verificación:</Text>
+                {/* 3. Tarjeta de Pruebas de Notificaciones */}
+                <View style={styles.pushCard}>
+                  <Text style={styles.testTitle}>🛠️ Herramientas de Prueba y Verificación:</Text>
                   <View style={styles.testBtnRow}>
                     <TouchableOpacity
                       onPress={handleSendTestPush}
@@ -237,15 +462,23 @@ export function AlarmsScreen({ route }: Props) {
                       {testSending ? (
                         <ActivityIndicator size="small" color="#fff" />
                       ) : (
-                        <Text style={styles.testBtnText}>📤 Probar Push Real (ntfy.sh)</Text>
+                        <Text style={styles.testBtnText}>📤 Probar UP (Celular)</Text>
                       )}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={handleSendTestTopic}
+                      disabled={testSending}
+                      style={[styles.testBtn, styles.testBtnSecondary]}
+                    >
+                      <Text style={styles.testBtnSecondaryText}>📢 Probar Topic Hub</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
                       onPress={handleSendTestLocal}
                       style={[styles.testBtn, styles.testBtnSecondary]}
                     >
-                      <Text style={styles.testBtnSecondaryText}>🔔 Probar Local</Text>
+                      <Text style={styles.testBtnSecondaryText}>🔔 Local</Text>
                     </TouchableOpacity>
                   </View>
 
@@ -259,13 +492,15 @@ export function AlarmsScreen({ route }: Props) {
         }
         contentContainerStyle={styles.list}
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyText}>
-              {tab === "active"
-                ? "No hay alarmas activas"
-                : "Sin historial de alarmas"}
-            </Text>
-          </View>
+          tab === "diagnostic" ? null : (
+            <View style={styles.empty}>
+              <Text style={styles.emptyText}>
+                {tab === "active"
+                  ? "No hay alarmas activas"
+                  : "Sin historial de alarmas"}
+              </Text>
+            </View>
+          )
         }
       />
       <NtfySubscribeSheet
@@ -335,7 +570,7 @@ const styles = StyleSheet.create({
   tab: {
     minHeight: 48,
     justifyContent: "center",
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     borderRadius: 999,
     backgroundColor: COLORS.surface,
     shadowColor: "#000",
@@ -350,18 +585,62 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
   },
   tabText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
     color: COLORS.textSecondary,
   },
   tabTextActive: {
     color: "#fff",
   },
+  notifyCta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderRadius: 18,
+    padding: 14,
+    backgroundColor: COLORS.primarySoft,
+  },
+  notifyCtaIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: COLORS.surface,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  notifyCtaText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  notifyCtaTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: COLORS.text,
+  },
+  notifyCtaSubtitle: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
+  notifyCtaButton: {
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: COLORS.primary,
+  },
+  notifyCtaButtonText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#fff",
+  },
+  diagnosticWrap: {
+    gap: 12,
+  },
   pushCard: {
     backgroundColor: COLORS.surface,
     borderRadius: 18,
     padding: 16,
-    gap: 12,
+    gap: 10,
     elevation: 1,
   },
   pushHeader: {
@@ -405,6 +684,23 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: COLORS.text,
   },
+  changeAlert: {
+    backgroundColor: "#FFF3E0",
+    borderColor: "#FFE0B2",
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
+    gap: 4,
+  },
+  changeAlertTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#E65100",
+  },
+  changeAlertText: {
+    fontSize: 12,
+    color: "#EF6C00",
+  },
   actionBtn: {
     backgroundColor: COLORS.primary,
     borderRadius: 12,
@@ -416,12 +712,47 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
   },
-  testSection: {
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    paddingTop: 12,
-    marginTop: 4,
+  subscribersList: {
+    backgroundColor: COLORS.background,
+    borderRadius: 12,
+    padding: 12,
     gap: 8,
+  },
+  subscribersListTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: COLORS.text,
+  },
+  subscribersEmptyText: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    fontStyle: "italic",
+  },
+  subscriberRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: COLORS.surface,
+    padding: 8,
+    borderRadius: 8,
+    gap: 8,
+  },
+  subscriberText: {
+    flex: 1,
+    fontSize: 12,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    color: COLORS.text,
+  },
+  mineBadge: {
+    backgroundColor: "#E8F5E9",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  mineBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#2E7D32",
   },
   testTitle: {
     fontSize: 13,
