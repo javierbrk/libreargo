@@ -7,5 +7,13 @@ export function getHubNotifyTopic(hub: Hub): string {
   if (NTFY_TOPIC_REGEX.test(name)) {
     return name;
   }
-  return `moni-${hub.hash.toLowerCase()}`;
+  return getHubNotifyTopicFromHash(hub.hash);
+}
+
+export function getHubNotifyTopicFromHash(hash: string): string {
+  const trimmed = hash.trim();
+  if (NTFY_TOPIC_REGEX.test(trimmed)) {
+    return trimmed;
+  }
+  return `moni-${trimmed.toLowerCase()}`;
 }

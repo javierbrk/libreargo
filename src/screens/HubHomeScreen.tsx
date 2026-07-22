@@ -24,8 +24,7 @@ import { getSensorRangeVisual } from "../utils/getSensorRangeVisual";
 import { semaforo, type SemaforoState } from "../utils/semaforo";
 import { IcoZona } from "../components/icons";
 import { resolveHubTarget } from "../services/connectivity";
-import { getNotifyBackend } from "../services/notifyApi/backend";
-import { getHubNotifyTopic } from "../services/notifyApi/topic";
+import { subscribeToMessages } from "../services/unifiedPushService";
 import {
   useZoneStore,
   zoneAssignmentKey,
@@ -34,7 +33,7 @@ import {
 
 type Props = NativeStackScreenProps<RootStackParamList, "HubHome">;
 
-const NOTIFY_POLL_INTERVAL_MS = 30_000;
+
 
 function resolveFilter(
   initialFilter: RootStackParamList["HubHome"]["filter"]
@@ -67,7 +66,6 @@ export function HubHomeScreen({ navigation, route }: Props) {
     loading,
     error,
     loadHubData,
-    pollNotifications,
     clearData,
   } = useHubDataStore();
   const [filter, setFilter] = useState<FilterType>(() =>
@@ -88,46 +86,20 @@ export function HubHomeScreen({ navigation, route }: Props) {
     }
 
     navigation.setOptions({ title: hub.name });
-    let cancelled = false;
-    let notifyInterval: ReturnType<typeof setInterval> | undefined;
-    let pollingNotifications = false;
+    const target = resolveHubTarget(connectionMode, hub);
 
-    void (async () => {
-      await loadHubData(resolveHubTarget(connectionMode, hub), connectionMode);
-      // El push por ntfy se consulta sólo en Online: en Directo el teléfono
-      // queda conectado al AP del hub y no tiene salida a internet.
-      if (
-        !cancelled &&
-        connectionMode === "online" &&
-        getNotifyBackend() === "http"
-      ) {
-        const topic = getHubNotifyTopic(hub);
-        const pollTopic = async () => {
-          if (pollingNotifications) {
-            return;
-          }
-          pollingNotifications = true;
-          try {
-            await pollNotifications(topic);
-          } finally {
-            pollingNotifications = false;
-          }
-        };
+    void loadHubData(target, connectionMode);
 
-        await pollTopic();
-        if (!cancelled) {
-          notifyInterval = setInterval(() => {
-            void pollTopic();
-          }, NOTIFY_POLL_INTERVAL_MS);
-        }
-      }
-    })();
+    // Cuando llega un mensaje push mientras la app está abierta,
+    // refrescamos los datos del hub para reflejar la nueva alarma.
+    // Si la app está cerrada, el NtfyPushPayloadRenderer (Kotlin)
+    // ya mostró la notificación nativa sin pasar por aquí.
+    const unsub = subscribeToMessages((_instance) => {
+      void loadHubData(target, connectionMode);
+    });
 
     return () => {
-      cancelled = true;
-      if (notifyInterval) {
-        clearInterval(notifyInterval);
-      }
+      unsub();
       clearData();
     };
   }, [
@@ -135,7 +107,6 @@ export function HubHomeScreen({ navigation, route }: Props) {
     connectionMode,
     navigation,
     loadHubData,
-    pollNotifications,
     clearData,
   ]);
 

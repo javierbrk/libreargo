@@ -9,8 +9,6 @@ import type {
 import { getHubApiClient } from "./hubApi/backend";
 import type { InfluxHubExtras } from "./hubApi/InfluxHubApiClient";
 import type { HistoryPoint } from "./hubApi/influxAdapters";
-import { getNotifyApiClient } from "./notifyApi/backend";
-import type { NotifyMessage } from "./notifyApi/NotifyApiClient";
 import { getRecommendationsApiClient } from "./recommendationsApi/backend";
 export {
   InvalidHubConfigError,
@@ -85,17 +83,6 @@ export async function pingHub(
   return getHubApiClient(mode).pingHub(hubIp);
 }
 
-/**
- * Poll de notificaciones push del hub vía ntfy.sh.
- * El `topic` se construye a partir del `incubator_name` del hub (ej. `moni-XXXXXXXX`).
- * `since` permite paginación incremental por timestamp/id del último mensaje visto.
- */
-export async function pollHubNotifications(
-  topic: string,
-  since?: string
-): Promise<readonly NotifyMessage[]> {
-  return getNotifyApiClient().pollMessages(topic, since);
-}
 
 export async function getSensorHistory(
   hubHash: string,

@@ -10,7 +10,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { HubHomeScreen } from "./HubHomeScreen";
 import { useHubStore } from "../stores/hubStore";
 import { useHubDataStore } from "../stores/hubDataStore";
-import { getNotifyBackend } from "../services/notifyApi/backend";
+
 import type { Device, HubConfig, SensorData } from "../types";
 import type { RootStackParamList } from "../navigation/types";
 
@@ -31,8 +31,10 @@ jest.mock("../components", () => {
   };
 });
 
-jest.mock("../services/notifyApi/backend", () => ({
-  getNotifyBackend: jest.fn(() => "mock"),
+jest.mock("../services/unifiedPushService", () => ({
+  subscribeToMessages: jest.fn(() => jest.fn()),
+  checkUnifiedPushStatus: jest.fn(() => "ntfy_ready"),
+  initUnifiedPush: jest.fn(),
 }));
 
 type Props = NativeStackScreenProps<RootStackParamList, "HubHome">;
@@ -110,8 +112,6 @@ describe("HubHomeScreen", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    (getNotifyBackend as jest.Mock).mockReturnValue("mock");
-
     useHubStore.setState({
       hubs: [
         {
@@ -135,7 +135,6 @@ describe("HubHomeScreen", () => {
       loading: false,
       error: null,
       loadHubData: jest.fn(),
-      pollNotifications: jest.fn(),
       clearData: jest.fn(),
     });
   });
@@ -310,113 +309,4 @@ describe("HubHomeScreen", () => {
     expect(screen.getByText("1 problema detectado")).toBeTruthy();
   });
 
-  it("consulta ntfy en modo online cuando el backend de notificaciones esta activo", async () => {
-    const loadHubData = jest.fn().mockResolvedValue(undefined);
-    const pollNotifications = jest.fn().mockResolvedValue(undefined);
-    (getNotifyBackend as jest.Mock).mockReturnValue("http");
-    useHubStore.setState({
-      hubs: [
-        {
-          hash: "F024F90C58F8",
-          name: "Hub Demo",
-          ip: "192.168.0.10",
-          status: "conectado",
-          addedAt: "2026-04-16T12:00:00Z",
-        },
-      ],
-      connectionMode: "online",
-      selectedHubHash: null,
-    });
-    useHubDataStore.setState({
-      loadHubData,
-      pollNotifications,
-    } as Partial<ReturnType<typeof useHubDataStore.getState>>);
-
-    render(
-      <HubHomeScreen
-        {...makeProps({
-          hubHash: "F024F90C58F8",
-        })}
-      />
-    );
-
-    await waitFor(() => {
-      expect(loadHubData).toHaveBeenCalledWith("F024F90C58F8", "online");
-      expect(pollNotifications).toHaveBeenCalledWith("moni-f024f90c58f8");
-    });
-  });
-
-  it("no consulta ntfy en directo aunque el backend de notificaciones este activo", async () => {
-    const loadHubData = jest.fn().mockResolvedValue(undefined);
-    const pollNotifications = jest.fn().mockResolvedValue(undefined);
-    (getNotifyBackend as jest.Mock).mockReturnValue("http");
-    useHubDataStore.setState({
-      loadHubData,
-      pollNotifications,
-    } as Partial<ReturnType<typeof useHubDataStore.getState>>);
-
-    render(<HubHomeScreen {...makeProps()} />);
-
-    await waitFor(() => {
-      expect(loadHubData).toHaveBeenCalledWith("192.168.4.1", "directo");
-    });
-    expect(pollNotifications).not.toHaveBeenCalled();
-  });
-
-  it("mantiene polling periodico de ntfy mientras el home esta montado", async () => {
-    jest.useFakeTimers();
-    const loadHubData = jest.fn().mockResolvedValue(undefined);
-    const pollNotifications = jest.fn().mockResolvedValue(undefined);
-    (getNotifyBackend as jest.Mock).mockReturnValue("http");
-    useHubStore.setState({
-      hubs: [
-        {
-          hash: "F024F90C58F8",
-          name: "Hub Demo",
-          ip: "192.168.0.10",
-          status: "conectado",
-          addedAt: "2026-04-16T12:00:00Z",
-        },
-      ],
-      connectionMode: "online",
-      selectedHubHash: null,
-    });
-    useHubDataStore.setState({
-      loadHubData,
-      pollNotifications,
-    } as Partial<ReturnType<typeof useHubDataStore.getState>>);
-
-    const rendered = render(
-      <HubHomeScreen
-        {...makeProps({
-          hubHash: "F024F90C58F8",
-        })}
-      />
-    );
-
-    try {
-      await waitFor(() => {
-        expect(pollNotifications).toHaveBeenCalledTimes(1);
-      });
-
-      pollNotifications.mockClear();
-      act(() => {
-        jest.advanceTimersByTime(30_000);
-      });
-
-      await waitFor(() => {
-        expect(pollNotifications).toHaveBeenCalledTimes(1);
-        expect(pollNotifications).toHaveBeenCalledWith("moni-f024f90c58f8");
-      });
-
-      rendered.unmount();
-      pollNotifications.mockClear();
-      act(() => {
-        jest.advanceTimersByTime(30_000);
-      });
-      expect(pollNotifications).not.toHaveBeenCalled();
-    } finally {
-      jest.useRealTimers();
-    }
-  });
 });

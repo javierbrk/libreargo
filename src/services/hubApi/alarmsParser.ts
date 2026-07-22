@@ -135,6 +135,21 @@ function normalizeHubTimestamp(rawTimestamp: string): string {
  * Devuelve undefined si el mensaje no corresponde a una medición que el modelo
  * de alarmas soporte (ej. avisos de WiFi).
  */
+export function parseAlarmFromPushText(text: string, instance?: string): Alarm {
+  const trimmed = text.trim();
+  const dataType = classifyDataType(trimmed) ?? "temperature";
+  return {
+    id: `push-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    timestamp: new Date().toISOString(),
+    dataType,
+    alertValue: extractAlertValue(trimmed),
+    currentValue: extractCurrentValue(trimmed),
+    zones: [],
+    status: "active",
+    message: instance ? `[${instance}] ${trimmed}` : trimmed,
+  };
+}
+
 export function parseAlarmFromNotifyMessage(
   msg: NotifyMessage
 ): Alarm | undefined {

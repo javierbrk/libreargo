@@ -12,13 +12,12 @@ import {
   getActual,
   getRelays,
   getAlarms,
-  pollHubNotifications,
 } from "../services/hubDataService";
-import { parseAlarmFromNotifyMessage } from "../services/hubApi/alarmsParser";
 import { buildHubSensorDevices } from "../features/sensors/buildHubSensorDevices";
 import { useHubConfigStore } from "./hubConfigStore";
-import type { NotifyMessage } from "../services/notifyApi/NotifyApiClient";
-import { scheduleLocalNotification } from "../services/localNotifications";
+import { getNotifyApiClient } from "../services/notifyApi/backend";
+import { getHubNotifyTopicFromHash } from "../services/notifyApi/topic";
+import { parseAlarmFromNotifyMessage } from "../services/hubApi/alarmsParser";
 
 interface HubDataState {
   readonly config: HubConfig | null;
@@ -28,16 +27,11 @@ interface HubDataState {
   readonly devices: readonly Device[];
   readonly loading: boolean;
   readonly error: string | null;
-  readonly notifySince: string | null;
-  // Mensajes de ntfy que no clasifican como alarma de medición (ver
-  // alarmsParser.classifyDataType): igual llegaron al topic suscripto, así
-  // que se muestran como texto crudo en Alertas en vez de descartarse.
-  readonly notifications: readonly NotifyMessage[];
 }
 
 interface HubDataActions {
   readonly loadHubData: (target: string, mode?: ConnectionMode) => Promise<void>;
-  readonly pollNotifications: (topic: string) => Promise<void>;
+  readonly addAlarm: (alarm: Alarm) => void;
   readonly clearData: () => void;
 }
 
@@ -68,16 +62,22 @@ export const useHubDataStore = create<HubDataState & HubDataActions>(
     devices: [],
     loading: false,
     error: null,
-    notifySince: null,
-    notifications: [],
+
+    addAlarm: (newAlarm: Alarm) => {
+      set((state) => {
+        const existingIds = new Set(state.alarms.map((a) => a.id));
+        if (existingIds.has(newAlarm.id)) {
+          return state;
+        }
+        return {
+          alarms: [newAlarm, ...state.alarms],
+        };
+      });
+    },
 
     loadHubData: async (target: string, mode: ConnectionMode = "directo") => {
       set({ loading: true, error: null });
       try {
-        // El WebServer del ESP32 (hub real) atiende UNA conexión a la vez.
-        // Pedimos en serie en vez de Promise.all para no saturarlo: con
-        // requests concurrentes algunas se caían. Es marginalmente más lento
-        // pero robusto (y en mock no cambia nada).
         const config =
           mode === "online"
             ? useHubConfigStore.getState().getConfig(target)
@@ -94,90 +94,38 @@ export const useHubDataStore = create<HubDataState & HubDataActions>(
 
         const actual = await getActual(target, mode);
         const relays = await getRelays(target, mode);
-        const alarms = mode === "online" ? [] : await getAlarms(target, mode);
+
+        let alarms: Alarm[] = [];
+        if (mode === "online") {
+          try {
+            const topic = getHubNotifyTopicFromHash(config.hash ?? target);
+            const messages = await getNotifyApiClient().pollMessages(topic);
+            const parsed = messages
+              .map(parseAlarmFromNotifyMessage)
+              .filter((a): a is Alarm => a !== undefined);
+            
+            // Combinar con alarmas que ya llegaron por push en vivo
+            const currentAlarms = get().alarms;
+            const knownIds = new Set(parsed.map((a) => a.id));
+            const livePushAlarms = currentAlarms.filter((a) => !knownIds.has(a.id));
+            alarms = [...livePushAlarms, ...parsed].sort(
+              (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+            );
+          } catch {
+            alarms = [...get().alarms];
+          }
+        } else {
+          alarms = [...(await getAlarms(target, mode))];
+        }
+
         const devices = buildDevices(config, relays);
         set({ config, actual, relays, alarms, devices, loading: false });
       } catch (e: unknown) {
-        // El mensaje genérico solo, sin la causa, hace imposible diagnosticar
-        // en campo (¿red? ¿respuesta inválida? ¿timeout?). Los errores de la
-        // capa de servicios ya traen mensajes aptos para usuario.
         const detail = e instanceof Error && e.message ? ` (${e.message})` : "";
         set({
           error: `No se pudieron cargar los datos del hub${detail}`,
           loading: false,
         });
-      }
-    },
-
-    pollNotifications: async (topic: string) => {
-      // Suscripción push del hub vía ntfy.sh (topic = incubator_name).
-      // Complementa a las alarmas derivadas de /actual.errors. Es best-effort:
-      // si falla, no debe afectar la pantalla. Mock-safe (el cliente mock
-      // devuelve mensajes seed; en producción se activa con NOTIFY_BACKEND=http).
-      try {
-        const since = get().notifySince ?? undefined;
-        const messages = await pollHubNotifications(topic, since);
-        if (messages.length === 0) {
-          return;
-        }
-
-        // Los mensajes que no clasifican como alarma de medición (ver
-        // classifyDataType) igual llegaron al topic suscripto: se guardan
-        // como texto crudo en vez de descartarse.
-        const parsed: Alarm[] = [];
-        const unclassified: NotifyMessage[] = [];
-        for (const msg of messages) {
-          const alarm = parseAlarmFromNotifyMessage(msg);
-          if (alarm) {
-            parsed.push(alarm);
-          } else {
-            unclassified.push(msg);
-          }
-        }
-
-        const maxTime = messages.reduce(
-          (max, msg) => (msg.time > max ? msg.time : max),
-          0
-        );
-
-        const existingAlarmIds = new Set(
-          useHubDataStore.getState().alarms.map((alarm) => alarm.id)
-        );
-        const freshAlarms = parsed.filter((alarm) => !existingAlarmIds.has(alarm.id));
-
-        const existingNotificationIds = new Set(
-          useHubDataStore.getState().notifications.map((msg) => msg.id)
-        );
-        const freshNotifications = unclassified.filter(
-          (msg) => !existingNotificationIds.has(msg.id)
-        );
-
-        set((state) => ({
-          alarms:
-            freshAlarms.length > 0 ? [...freshAlarms, ...state.alarms] : state.alarms,
-          notifications:
-            freshNotifications.length > 0
-              ? [...freshNotifications, ...state.notifications]
-              : state.notifications,
-          notifySince: maxTime > 0 ? String(maxTime) : state.notifySince,
-        }));
-
-        // Disparar notificación local del SO por cada alarma nueva.
-        for (const alarm of freshAlarms) {
-          void scheduleLocalNotification(
-            "⚠️ Alarma del hub",
-            alarm.message
-          );
-        }
-        // Disparar notificación local del SO por cada mensaje ntfy no clasificado.
-        for (const msg of freshNotifications) {
-          void scheduleLocalNotification(
-            msg.title ?? "Notificación del hub",
-            msg.message
-          );
-        }
-      } catch {
-        // ntfy es complementario; ignoramos errores de red.
       }
     },
 
@@ -189,8 +137,6 @@ export const useHubDataStore = create<HubDataState & HubDataActions>(
         alarms: [],
         devices: [],
         error: null,
-        notifySince: null,
-        notifications: [],
       }),
   })
 );
