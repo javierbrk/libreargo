@@ -31,10 +31,10 @@ export function mapConfigurationResponse(payload: unknown): HubConfig {
       })),
     };
   } catch (error) {
-    if (!(error instanceof InvalidHubConfigError)) {
-      throw error;
+    if (error instanceof InvalidHubConfigError) {
+      throw new HubApiInvalidResponseError(error.message);
     }
-    throw new HubApiInvalidResponseError();
+    throw error;
   }
 }
 

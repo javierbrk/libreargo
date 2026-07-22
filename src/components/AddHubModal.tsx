@@ -83,7 +83,7 @@ export function AddHubModal({
         }
 
         const message =
-          error instanceof InvalidHubConfigError
+          error instanceof Error && error.message
             ? error.message
             : "No se pudo conectar al hub. Verificá la conexión Wi-Fi.";
 
