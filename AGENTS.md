@@ -53,14 +53,13 @@ cd android && ./gradlew assembleRelease
 
 ## Arquitectura (resumen)
 
-- `services/hubApi/` — cliente del hub (`MockHubApiClient` | `HttpHubApiClient`),
-  `adapters.ts` (validación de respuestas), `alarmsParser.ts` (alarmas derivadas
-  de `/actual.errors` y de mensajes ntfy), `backend.ts` (selector por env).
-- `services/notifyApi/` — push ntfy.sh (`/topic/json?poll=1`), mock | http.
+- `services/unifiedPushService.ts` — cliente UnifiedPush (`expo-unified-push`) que gestiona los endpoints únicos por celular.
+- `modules/ntfy-push-renderer/` — módulo Kotlin nativo (`NtfyPushPayloadRenderer.kt`) que renderiza notificaciones nativas en background cuando la app está cerrada.
+- `services/hubApi/` — cliente del hub (`MockHubApiClient` | `HttpHubApiClient`), `adapters.ts` (validación de respuestas), `alarmsParser.ts` (alarmas derivadas de `/actual.errors` y mensajes push), `registerPushEndpoint` (`POST /api/notify/subscribe`) y `getSubscribers` (`GET /api/notify/subscribers`).
+- `services/notifyApi/` — utilidades ntfy.sh (tópicos y deep links).
 - `services/recommendationsApi/` — `/messages` (GET/POST), mock | http.
-- `services/connectivity.ts` — `resolveHubTarget(mode, hub)`: Directo → IP fija
-  `192.168.4.1`; Online → `hash` (ruteo por backend, sin descubrir IP).
-- `services/hubDataService.ts` — fachada única que usan los stores.
+- `services/connectivity.ts` — `resolveHubTarget(mode, hub)`: Directo → `hub.ip` / `192.168.4.1`; Online → `hash` (ruteo por backend).
+- `services/hubDataService.ts` — fachada única que usan los stores (incluye `autoSyncPushEndpointWithHub`).
 - `stores/` (zustand) — `hubStore`, `hubDataStore`, `cropStore`, `zoneStore`.
 
 ## Cosas específicas que conviene saber

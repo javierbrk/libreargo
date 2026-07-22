@@ -36,34 +36,18 @@ npm run android      # abre en Android
 > En desarrollo la app usa **datos mock** por defecto (no necesita un hub real).
 > Los servicios reales se activan solo en builds de release (ver más abajo).
 
-## Notificaciones ntfy en Android (MVP)
+## Notificaciones Push y UnifiedPush en Android
 
-Para notificaciones nativas/background, el MVP usa la app oficial de **ntfy**
-instalada en el teléfono como distribuidor. El usuario debe instalar **LibreAgro**
-y **ntfy**, y suscribir ntfy al topic del hub:
+Para notificaciones nativas/background (con la app abierta o cerrada), LibreAgro utiliza **UnifiedPush** integrado con la app oficial de **ntfy** (`io.heckel.ntfy`) como distribuidor.
 
-```
-moni-<MAC_sin_dos_puntos>
-```
+El flujo de registro es **invertido y dinámico**:
+1. La app **LibreAgro** genera un **Endpoint único de notificaciones** a través de `ntfy` (ej. `https://ntfy.sh/upqWunC0oivigx?up=1`).
+2. Al conectarse en **Modo Directo**, la app envía automáticamente su endpoint al ESP32 vía `POST http://192.168.4.1/api/notify/subscribe`.
+3. El ESP32 almacena la lista de suscriptores (consultables en `GET /api/notify/subscribers`).
+4. Al dispararse una alarma, el ESP32 emite la notificación realizando un HTTP POST directamente al endpoint del celular registrado.
+5. El módulo nativo Kotlin `NtfyPushPayloadRenderer.kt` en LibreAgro procesa el mensaje en background y muestra la notificación nativa de Android.
 
-Por ejemplo, para probar desde una terminal:
-
-```bash
-curl -d "[C] CO2 too high: 1200 max:900" https://ntfy.sh/moni-001122aabbcc
-```
-
-La app ntfy mantiene su conexión en background y muestra la notificación de
-Android cuando llega un POST del ESP32, curl u otro publicador. LibreAgro no
-registra por ahora un `BroadcastReceiver` nativo propio; en foreground, cuando
-la pantalla del hub está montada y el modo es **Online**, LibreAgro consulta ntfy
-periódicamente y agrega las alarmas de medición soportadas a la pantalla de
-Alarmas.
-
-En **Directo** no se consulta ntfy: el teléfono queda conectado al AP del hub y
-no tiene salida a internet.
-
-Ver la guía operativa completa en
-[`docs/ntfy-android-mvp.md`](docs/ntfy-android-mvp.md).
+Ver la guía técnica completa en [`docs/ntfy-android-mvp.md`](docs/ntfy-android-mvp.md).
 
 ## Tests y tipos
 
